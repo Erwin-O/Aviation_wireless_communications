@@ -1,0 +1,39 @@
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Setuptools / build artefacts
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Runtime artefacts
+logs/
+*.log
+*.jsonl
+*.prev
+
+# MQTT broker runtime state
+mqtt-broker/mosquitto/data/*
+!mqtt-broker/mosquitto/data/.gitkeep
+mqtt-broker/mosquitto/log/*
+!mqtt-broker/mosquitto/log/.gitkeep
+
+# macOS
+.DS_Store
+
+# Claude Code local settings
+.claude/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo

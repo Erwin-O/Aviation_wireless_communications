@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "actors": {
+    "OOABC": {
+      "type": "aircraft",
+      "pubkey_ed25519": "fYgOiJE7ECe_vGUD4qk12Weabe45FwrCYac9lvZqFmU",
+      "pubkey_x25519": "MP16XiFmr6YLLG_vTNKKPbYdKs3-o2b29WsalmGd5BI"
+    },
+    "EBBR": {
+      "type": "tower",
+      "pubkey_ed25519": "wAtV9fk1U31JYxi0duB1HPJhWFVfYVPJyevWFx-SOk8",
+      "pubkey_x25519": "g65YpFRdzEfGSnWVWjHge4cBPJNiqW7fXluozR9iQzo"
+    },
+    "EBBR_GND": {
+      "type": "tower",
+      "pubkey_ed25519": "hjpmadnv7ZFhI7zkMT38EFiwbZHkJ4ZOzvdBnx8pZ2k",
+      "pubkey_x25519": "U_9SjdN4d4rlj90OuORrmym1s7FuWMMYMqc-016UW28"
+    },
+    "EBBR_TWR": {
+      "type": "tower",
+      "pubkey_ed25519": "k9bfUt9G1CZqM_jnuUo7VmfSeT6VHz9zKU0N6by4Y4o",
+      "pubkey_x25519": "QdKxb-iEUUESyuKMUxM8JZI_Pw7lLk39Kz8fUW0zqzM"
+    },
+    "BRUACC": {
+      "type": "atc",
+      "pubkey_ed25519": "rVX-TAEoYVumPc9271d8qxK322NV9ZJt_vGxxTiCId8",
+      "pubkey_x25519": "1c2hLGu4Bf398BjSj44_ToB8QrLk591u-y7VIeD6Dyc"
+    },
+    "MUAC": {
+      "type": "enroute",
+      "pubkey_ed25519": "R-UwCJtwVgZilqfH2dyMGWgwz5h6nDvyy9ilohUaLQc",
+      "pubkey_x25519": "AdFvndjLs-zTOd0CTKRSVNyzqLQG0-Ypti1ARZOhPAk"
+    },
+    "LANGEN": {
+      "type": "enroute",
+      "pubkey_ed25519": "uv7AgIaCqxeKOgTqnXSHsCesO8sZXM9Pq0C1L1Kr0ZE",
+      "pubkey_x25519": "NGtsNyQvbpBsFJ2nVzMuqYQgEks3WJnJK5Y8ev_PDjw"
+    },
+    "EDDF_TWR": {
+      "type": "tower",
+      "pubkey_ed25519": "KFewoB_Hbn1HALTesRJJ7lvbdWZyWLDbr4DhrUkuzO4",
+      "pubkey_x25519": "oEN1_iqCALnnuPlihbT8q1I5GOjRtFTLugeQbSYyLhU"
+    },
+    "EDDF_APP": {
+      "type": "atc",
+      "pubkey_ed25519": "8lrAfYZioenKHfgzSc9x8aiN86-RuCN6jax-LZNBxcw",
+      "pubkey_x25519": "gW0oGn2A0fFlFBBR6Pm_GAKZZb9M9j7q_BirqhABrHM"
+    },
+    "EDDF_GND": {
+      "type": "tower",
+      "pubkey_ed25519": "8m9cLFG7GetkXgs9j-qPNkCUXqXOoojEb0U7YNfn87Y",
+      "pubkey_x25519": "eYTBorH4ZiSLImgHlshQcWcMKEsuMaGLj_-0RaXNuWI"
+    },
+    "PHAEX": {
+      "type": "aircraft",
+      "pubkey_ed25519": "3agWwLJqMxdikDy4SpAEU9L2GDMuRXht-qWSInKrJII",
+      "pubkey_x25519": "knSN_HB8J9us523PGpqoOVIQjlTn7C5DsRxeIprtk0k"
+    },
+    "EHAM_TWR": {
+      "type": "tower",
+      "pubkey_ed25519": "Hfs_mpKHaw0qJj0DQ_SJBMMaJ0bB9eC-Q0uIZuhcvu4",
+      "pubkey_x25519": "fR6WnmwlfE680pNuRTvIUh3KQ3cPDuGQlbSFK9HyXRk"
+    },
+    "EHAM_APP": {
+      "type": "atc",
+      "pubkey_ed25519": "HUO_sXZ-vmlpnV4wBhnbKOANayjFcJ8Uq7S_sHKd2rU",
+      "pubkey_x25519": "Ls2Sg99cSKkpSy7daDZfoX6BLQ1XHPyi6JGpavb5LEw"
+    },
+    "EHAA_CTR": {
+      "type": "enroute",
+      "pubkey_ed25519": "5LAMOeOK2ENWaaQ9ZrXJRLOl5sREBLwYhNcnUt6C9b0",
+      "pubkey_x25519": "dj1dQFnb2Z-_CBwLVO5jj_xbao0ZBQtAYRofv-yrTiM"
+    },
+    "EDGG_CTR": {
+      "type": "enroute",
+      "pubkey_ed25519": "GSe3OW1Mh87u0inTTvRGCE7OyLUAWmnP9B2PlPWhknI",
+      "pubkey_x25519": "Bzz9QuPdKLWSjJz-L-gd7QPQ3AHcXXdDh1KVfRK85lY"
+    },
+    "EDMM_CTR": {
+      "type": "enroute",
+      "pubkey_ed25519": "UYVaIfCtmilb7tT24OJv5VXhIVOw5cS_x-t8EN0mYwI",
+      "pubkey_x25519": "UEbvu2HYir7oDz1epG4pEXXQJ9Hg-hREX76Ob6IIC3A"
+    },
+    "EDDM_APP": {
+      "type": "atc",
+      "pubkey_ed25519": "uTYh3ML9NA9Vy1I5T10SGE67i1fxHPDnUbmOyWOcKAA",
+      "pubkey_x25519": "E56UKU_icOIY33nKhtBZ7Tht22UYMS7Flgr776wd6Ec"
+    },
+    "EDDM_TWR": {
+      "type": "tower",
+      "pubkey_ed25519": "EmmfKqVOb1HclkAQMuibC3CXklcOWUmWKlb_b99vriI",
+      "pubkey_x25519": "glbjVovl5WN04fQHMi7PpGT2ZurHBa-z0bDxE9It31c"
+    }
+  }
+}

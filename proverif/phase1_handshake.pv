@@ -1,0 +1,200 @@
+(*
+ * phase1_handshake.pv
+ *
+ * Phase 1 of the formal verification of the air-ground communication
+ * protocol. Models only the first two messages of the handshake (KEY
+ * and KEYACK). KEYCONFIRM, operational messages, handover, replay,
+ * and entropy resilience are added in subsequent phases.
+ *
+ * Properties verified in this phase (corresponding to the goals in
+ * Section 5.1 of the paper):
+ *
+ *   G1 -- Session key secrecy
+ *   G2 -- Aircraft authentication (signature on KEY)
+ *   G3 -- Ground-station authentication (signature on KEYACK)
+ *
+ * Attacker model: Dolev-Yao. The attacker has full control of the
+ * public network channel c -- it can intercept, modify, replay, and
+ * inject messages. It does not hold the long-term private signing
+ * keys of the legitimate principals, nor can it compute X25519 DH
+ * outputs without one of the contributing private keys.
+ *
+ * Run with:
+ *   proverif phase1_handshake.pv
+ *
+ * Look for three RESULT lines, each ending in "is true":
+ *   RESULT not attacker(Ksess_test[]) is true.                  (G1)
+ *   RESULT ...groundAcceptsKey... ==> ...aircraftSentKey... is true.  (G2)
+ *   RESULT ...aircraftDerivesKsess... ==> ...groundSentKeyAck... is true.  (G3)
+ *)
+
+
+(* ================================================================== *)
+(* Type declarations                                                  *)
+(* ================================================================== *)
+
+type host.       (* aircraft / ground-station identifier            *)
+type sessionid.        (* session identifier (a 128-bit random nonce)     *)
+type sskey.      (* Ed25519 long-term signing private key           *)
+type spkey.      (* Ed25519 long-term signing public key            *)
+type dhkey.      (* X25519 ephemeral private key                    *)
+type element.    (* X25519 public key / group element               *)
+type skey.       (* derived session key K_sess                      *)
+
+
+(* ================================================================== *)
+(* Cryptographic primitives                                           *)
+(* ================================================================== *)
+
+(* Ed25519 signatures. Unforgeability is captured by the destructor:
+   verify(sign(m, sk), spk(sk), m) reduces to true, but no other
+   triple does, so the attacker cannot fabricate a signature.        *)
+fun spk(sskey): spkey.
+fun sign(bitstring, sskey): bitstring.
+reduc forall m: bitstring, sk: sskey;
+  verify(sign(m, sk), spk(sk), m) = true.
+
+(* X25519 Diffie-Hellman. The commutativity equation
+   exp(exp(g, x), y) = exp(exp(g, y), x)
+   captures the property that both sessionides of a DH exchange compute the
+   same shared secret. The attacker cannot derive exp(exp(g, x), y)
+   from exp(g, x) and exp(g, y) alone (CDH assumption).               *)
+const g: element.
+fun exp(element, dhkey): element.
+equation forall x: dhkey, y: dhkey;
+  exp(exp(g, x), y) = exp(exp(g, y), x).
+
+(* HKDF-style key derivation. The DH shared value and the session
+   identifier are both inputs; the SID acts as a domain separator.
+   Modelled as a free function symbol, so the symbolic model gives
+   it preimage and collision resistance for free.                    *)
+fun kdf(element, sessionid): skey.
+
+(* Symmetric encryption, used here solely as the test harness for G1.
+   Not part of the protocol itself: we encrypt the test secret
+   Ksess_test under the derived session key, and the G1 query then
+   asks whether the attacker can derive Ksess_test, which is
+   equivalent to asking whether it can derive the session key.       *)
+fun senc(bitstring, skey): bitstring.
+reduc forall m: bitstring, k: skey;
+  sdec(senc(m, k), k) = m.
+
+
+(* ================================================================== *)
+(* Canonical message constructors                                     *)
+(* ================================================================== *)
+
+(* Each protocol message is a typed bitstring constructor. Using
+   [data] makes them free (no equations) and pattern-destructurable. *)
+
+(* m_KEY = TIMESTAMP, FROM, TO, SID, SIGNING_KEY, EPHEMERAL_KEY      *)
+(* For phase 1 the timestamp is omitted: timestamps are about replay,
+   which is phase 5.                                                  *)
+fun mkKey(host, host, sessionid, spkey, element): bitstring [data].
+
+(* m_KEYACK = TIMESTAMP, FROM, TO, SID, EPHEMERAL_KEY                *)
+fun mkKeyAck(host, host, sessionid, element): bitstring [data].
+
+
+(* ================================================================== *)
+(* Channels and free names                                            *)
+(* ================================================================== *)
+
+free c: channel.                         (* public network channel    *)
+free A: host.                            (* aircraft identifier       *)
+free G: host.                            (* ground-station identifier *)
+free Ksess_test: bitstring [private].    (* G1 secrecy test value     *)
+
+
+(* ================================================================== *)
+(* Events                                                             *)
+(* ================================================================== *)
+
+event aircraftSentKey(host, host, sessionid).
+event groundAcceptsKey(host, host, sessionid).
+event groundSentKeyAck(host, host, sessionid).
+event aircraftDerivesKsess(host, host, sessionid).
+
+
+(* ================================================================== *)
+(* Security queries                                                   *)
+(* ================================================================== *)
+
+(* G1 -- session-key secrecy. *)
+query attacker(Ksess_test).
+
+(* G2 -- aircraft authentication. *)
+query a: host, gs: host, s: sessionid;
+  event(groundAcceptsKey(a, gs, s)) ==> event(aircraftSentKey(a, gs, s)).
+
+(* G3 -- ground-station authentication. *)
+query a: host, gs: host, s: sessionid;
+  event(aircraftDerivesKsess(a, gs, s)) ==> event(groundSentKeyAck(a, gs, s)).
+
+
+(* ================================================================== *)
+(* Aircraft process                                                   *)
+(* ================================================================== *)
+
+let aircraft(skA_sig: sskey, pkG_sig: spkey) =
+  (* Step 1: generate session id and ephemeral DH key pair, then
+     construct, sign, and send the KEY message.                      *)
+  new s: sessionid;
+  new skA_eph: dhkey;
+  let pkA_eph = exp(g, skA_eph) in
+  let mKEY = mkKey(A, G, s, spk(skA_sig), pkA_eph) in
+  let sigA = sign(mKEY, skA_sig) in
+  event aircraftSentKey(A, G, s);
+  out(c, (mKEY, sigA));
+  (* Wait for KEYACK, verify it, derive K_sess.                      *)
+  in(c, (mKEYACK_bs: bitstring, sigG: bitstring));
+  let mkKeyAck(=G, =A, =s, pkG_eph: element) = mKEYACK_bs in
+  if verify(sigG, pkG_sig, mKEYACK_bs) = true then
+  let z = exp(pkG_eph, skA_eph) in
+  let ksess = kdf(z, s) in
+  event aircraftDerivesKsess(A, G, s);
+  (* G1 test harness: encrypt the test secret under K_sess.          *)
+  out(c, senc(Ksess_test, ksess)).
+
+
+(* ================================================================== *)
+(* Ground-station process                                             *)
+(* ================================================================== *)
+
+let ground(skG_sig: sskey, pkA_sig: spkey) =
+  (* Receive KEY, verify signature, check the SIGNING_KEY field
+     matches the value in the ground station's trusted registry.    *)
+  in(c, (mKEY_bs: bitstring, sigA: bitstring));
+  let mkKey(=A, =G, s: sessionid, pkA_sig_in: spkey, pkA_eph: element) = mKEY_bs in
+  if pkA_sig_in = pkA_sig then
+  if verify(sigA, pkA_sig, mKEY_bs) = true then
+  event groundAcceptsKey(A, G, s);
+  (* Generate own ephemeral key pair, construct, sign, and send
+     KEYACK.                                                          *)
+  new skG_eph: dhkey;
+  let pkG_eph = exp(g, skG_eph) in
+  let mKEYACK = mkKeyAck(G, A, s, pkG_eph) in
+  let sigG = sign(mKEYACK, skG_sig) in
+  event groundSentKeyAck(A, G, s);
+  out(c, (mKEYACK, sigG));
+  (* Derive K_sess.                                                   *)
+  let z = exp(pkA_eph, skG_eph) in
+  let ksess = kdf(z, s) in
+  (* G1 test harness: encrypt the test secret under K_sess.          *)
+  out(c, senc(Ksess_test, ksess)).
+
+
+(* ================================================================== *)
+(* Main process: setup of long-term keys and unbounded replication.   *)
+(* ================================================================== *)
+
+process
+  new skA_sig: sskey;
+  new skG_sig: sskey;
+  let pkA_sig = spk(skA_sig) in
+  let pkG_sig = spk(skG_sig) in
+  (* Public keys are public; publish them to the attacker.           *)
+  out(c, (pkA_sig, pkG_sig));
+  (* Replicate aircraft and ground processes for unbounded sessions. *)
+  (   ! aircraft(skA_sig, pkG_sig)
+    | ! ground(skG_sig, pkA_sig) )

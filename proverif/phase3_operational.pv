@@ -1,0 +1,288 @@
+(*
+ * phase3_operational.pv
+ *
+ * Phase 3 of the formal verification of the air-ground communication
+ * protocol. Extends phase2_keyconfirm.pv with the operational message
+ * exchange that follows session establishment: SA (aircraft -> ground),
+ * CC (ground -> aircraft), ACK (aircraft -> ground).
+ *
+ * Properties verified in this phase:
+ *
+ *   G1 -- session-key secrecy                      (carried over)
+ *   G2 -- aircraft authentication                  (carried over)
+ *   G3 -- ground-station authentication            (carried over)
+ *   G7 -- handshake transcript agreement           (carried over)
+ *   G4 -- operational message integrity            (new, three queries)
+ *
+ * G4 covers all three operational message types:
+ *   G4_SA  -- if the ground accepts an SA(payload), the aircraft sent it
+ *   G4_CC  -- if the aircraft accepts a CC(body), the ground sent it
+ *   G4_ACK -- if the ground accepts an ACK(hash), the aircraft sent it
+ *
+ * Attack A8 (type confusion) is defeated by construction: the symbolic
+ * model treats mkSA, mkCC and mkAck as disjoint [data] constructors, so
+ * an SA bitstring cannot be pattern-matched as a CC and vice versa. The
+ * MAC over the full constructed bitstring binds the operational role.
+ *
+ * Replay defence (G6) is NOT modelled in this phase: phase 3 verifies
+ * only non-injective correspondences. Phase 5 will introduce explicit
+ * replay protection and injective correspondences.
+ *
+ * Run with:
+ *   proverif phase3_operational.pv
+ *
+ * Look for seven RESULT lines, each ending in "is true".
+ *)
+
+
+(* ================================================================== *)
+(* Type declarations                                                  *)
+(* ================================================================== *)
+
+type host.
+type sessionid.
+type sskey.
+type spkey.
+type dhkey.
+type element.
+type skey.
+
+
+(* ================================================================== *)
+(* Cryptographic primitives                                           *)
+(* ================================================================== *)
+
+(* Ed25519 signatures. *)
+fun spk(sskey): spkey.
+fun sign(bitstring, sskey): bitstring.
+reduc forall m: bitstring, sk: sskey;
+  verify(sign(m, sk), spk(sk), m) = true.
+
+(* X25519 Diffie-Hellman. *)
+const g: element.
+fun exp(element, dhkey): element.
+equation forall x: dhkey, y: dhkey;
+  exp(exp(g, x), y) = exp(exp(g, y), x).
+
+(* HKDF-style key derivation. *)
+fun kdf(element, sessionid): skey.
+
+(* Ascon-MAC. *)
+fun mac(bitstring, skey): bitstring.
+reduc forall m: bitstring, k: skey;
+  verifymac(mac(m, k), k, m) = true.
+
+(* SHA-256 (used for the transcript hash and the ACK hash). *)
+fun hash(bitstring): bitstring.
+
+(* Symmetric encryption (G1 test harness only). *)
+fun senc(bitstring, skey): bitstring.
+reduc forall m: bitstring, k: skey;
+  sdec(senc(m, k), k) = m.
+
+
+(* ================================================================== *)
+(* Canonical message constructors                                     *)
+(* ================================================================== *)
+
+(* Handshake messages (as in phase 2) *)
+fun mkKey(host, host, sessionid, spkey, element): bitstring [data].
+fun mkKeyAck(host, host, sessionid, element): bitstring [data].
+fun mkKeyConfirm(host, host, sessionid, bitstring): bitstring [data].
+
+(* Operational messages
+   mkSA   = FROM, TO, SID, payload (flight_data)
+   mkCC   = FROM, TO, SID, TYPE, body
+   mkAck  = FROM, TO, SID, ack_hash                                    *)
+fun mkSA(host, host, sessionid, bitstring): bitstring [data].
+fun mkCC(host, host, sessionid, bitstring, bitstring): bitstring [data].
+fun mkAck(host, host, sessionid, bitstring): bitstring [data].
+
+
+(* ================================================================== *)
+(* Channels and free names                                            *)
+(* ================================================================== *)
+
+free c: channel.
+free A: host.
+free G: host.
+free Ksess_test: bitstring [private].
+
+(* Public CC type identifier; in the real protocol this would be one of
+   REQUEST / CLEARANCE / INSTRUCTION / CONTACT. Modelled as a single
+   free name -- the symbolic value is what matters.                   *)
+free typeINSTRUCTION: bitstring.
+
+
+(* ================================================================== *)
+(* Events                                                             *)
+(* ================================================================== *)
+
+(* Handshake (as in phase 2) *)
+event aircraftSentKey(host, host, sessionid).
+event groundAcceptsKey(host, host, sessionid).
+event groundSentKeyAck(host, host, sessionid).
+event aircraftDerivesKsess(host, host, sessionid).
+event aircraftSentConfirm(host, host, sessionid, bitstring).
+event groundAcceptsConfirm(host, host, sessionid, bitstring).
+
+(* Operational *)
+event aircraftSentSA(host, host, sessionid, bitstring).
+event groundAcceptsSA(host, host, sessionid, bitstring).
+event groundSentCC(host, host, sessionid, bitstring, bitstring).
+event aircraftAcceptsCC(host, host, sessionid, bitstring, bitstring).
+event aircraftSentAck(host, host, sessionid, bitstring).
+event groundAcceptsAck(host, host, sessionid, bitstring).
+
+
+(* ================================================================== *)
+(* Security queries                                                   *)
+(* ================================================================== *)
+
+(* G1 *)
+query attacker(Ksess_test).
+
+(* G2 *)
+query a: host, gs: host, s: sessionid;
+  event(groundAcceptsKey(a, gs, s)) ==> event(aircraftSentKey(a, gs, s)).
+
+(* G3 *)
+query a: host, gs: host, s: sessionid;
+  event(aircraftDerivesKsess(a, gs, s)) ==> event(groundSentKeyAck(a, gs, s)).
+
+(* G7 *)
+query a: host, gs: host, s: sessionid, t: bitstring;
+  event(groundAcceptsConfirm(a, gs, s, t)) ==>
+    event(aircraftSentConfirm(a, gs, s, t)).
+
+(* G4_SA -- integrity of SA messages, aircraft -> ground *)
+query a: host, gs: host, s: sessionid, p: bitstring;
+  event(groundAcceptsSA(a, gs, s, p)) ==> event(aircraftSentSA(a, gs, s, p)).
+
+(* G4_CC -- integrity of CC messages, ground -> aircraft *)
+query a: host, gs: host, s: sessionid, t: bitstring, b: bitstring;
+  event(aircraftAcceptsCC(a, gs, s, t, b)) ==>
+    event(groundSentCC(a, gs, s, t, b)).
+
+(* G4_ACK -- integrity of ACK messages, aircraft -> ground *)
+query a: host, gs: host, s: sessionid, h: bitstring;
+  event(groundAcceptsAck(a, gs, s, h)) ==> event(aircraftSentAck(a, gs, s, h)).
+
+
+(* ================================================================== *)
+(* Aircraft process                                                   *)
+(* ================================================================== *)
+
+let aircraft(skA_sig: sskey, pkG_sig: spkey) =
+  (* --- Handshake: KEY --- *)
+  new s: sessionid;
+  new skA_eph: dhkey;
+  let pkA_eph = exp(g, skA_eph) in
+  let mKEY = mkKey(A, G, s, spk(skA_sig), pkA_eph) in
+  let sigA = sign(mKEY, skA_sig) in
+  event aircraftSentKey(A, G, s);
+  out(c, (mKEY, sigA));
+
+  (* --- Handshake: KEYACK --- *)
+  in(c, (mKEYACK_bs: bitstring, sigG: bitstring));
+  let mkKeyAck(=G, =A, =s, pkG_eph: element) = mKEYACK_bs in
+  if verify(sigG, pkG_sig, mKEYACK_bs) = true then
+  let z = exp(pkG_eph, skA_eph) in
+  let ksess = kdf(z, s) in
+  event aircraftDerivesKsess(A, G, s);
+
+  (* --- Handshake: KEYCONFIRM --- *)
+  let tau = hash((mKEY, mKEYACK_bs)) in
+  let mKEYCONFIRM = mkKeyConfirm(A, G, s, tau) in
+  let tKC = mac(mKEYCONFIRM, ksess) in
+  event aircraftSentConfirm(A, G, s, tau);
+  out(c, (mKEYCONFIRM, tKC));
+
+  (* --- Operational: send SA --- *)
+  new payload_SA: bitstring;
+  let mSA = mkSA(A, G, s, payload_SA) in
+  let tSA = mac(mSA, ksess) in
+  event aircraftSentSA(A, G, s, payload_SA);
+  out(c, (mSA, tSA));
+
+  (* --- Operational: receive CC, send ACK --- *)
+  in(c, (mCC_bs: bitstring, tCC: bitstring));
+  let mkCC(=G, =A, =s, cc_type: bitstring, cc_body: bitstring) = mCC_bs in
+  if verifymac(tCC, ksess, mCC_bs) = true then
+  event aircraftAcceptsCC(A, G, s, cc_type, cc_body);
+
+  let ack_hash = hash(mCC_bs) in
+  let mACK = mkAck(A, G, s, ack_hash) in
+  let tACK = mac(mACK, ksess) in
+  event aircraftSentAck(A, G, s, ack_hash);
+  out(c, (mACK, tACK));
+
+  (* --- G1 test harness --- *)
+  out(c, senc(Ksess_test, ksess)).
+
+
+(* ================================================================== *)
+(* Ground-station process                                             *)
+(* ================================================================== *)
+
+let ground(skG_sig: sskey, pkA_sig: spkey) =
+  (* --- Handshake: receive KEY --- *)
+  in(c, (mKEY_bs: bitstring, sigA: bitstring));
+  let mkKey(=A, =G, s: sessionid, pkA_sig_in: spkey, pkA_eph: element) = mKEY_bs in
+  if pkA_sig_in = pkA_sig then
+  if verify(sigA, pkA_sig, mKEY_bs) = true then
+  event groundAcceptsKey(A, G, s);
+
+  (* --- Handshake: send KEYACK, derive K_sess --- *)
+  new skG_eph: dhkey;
+  let pkG_eph = exp(g, skG_eph) in
+  let mKEYACK = mkKeyAck(G, A, s, pkG_eph) in
+  let sigG = sign(mKEYACK, skG_sig) in
+  event groundSentKeyAck(A, G, s);
+  out(c, (mKEYACK, sigG));
+  let z = exp(pkA_eph, skG_eph) in
+  let ksess = kdf(z, s) in
+
+  (* --- Handshake: receive KEYCONFIRM, verify transcript and MAC --- *)
+  in(c, (mKEYCONFIRM_bs: bitstring, tKC: bitstring));
+  let mkKeyConfirm(=A, =G, =s, tau_recv: bitstring) = mKEYCONFIRM_bs in
+  let tau_local = hash((mKEY_bs, mKEYACK)) in
+  if tau_recv = tau_local then
+  if verifymac(tKC, ksess, mKEYCONFIRM_bs) = true then
+  event groundAcceptsConfirm(A, G, s, tau_local);
+
+  (* --- Operational: receive SA --- *)
+  in(c, (mSA_bs: bitstring, tSA: bitstring));
+  let mkSA(=A, =G, =s, payload_recv: bitstring) = mSA_bs in
+  if verifymac(tSA, ksess, mSA_bs) = true then
+  event groundAcceptsSA(A, G, s, payload_recv);
+
+  (* --- Operational: send CC --- *)
+  new cc_body: bitstring;
+  let mCC = mkCC(G, A, s, typeINSTRUCTION, cc_body) in
+  let tCC = mac(mCC, ksess) in
+  event groundSentCC(A, G, s, typeINSTRUCTION, cc_body);
+  out(c, (mCC, tCC));
+
+  (* --- Operational: receive ACK --- *)
+  in(c, (mACK_bs: bitstring, tACK: bitstring));
+  let mkAck(=A, =G, =s, ack_hash_recv: bitstring) = mACK_bs in
+  if verifymac(tACK, ksess, mACK_bs) = true then
+  event groundAcceptsAck(A, G, s, ack_hash_recv);
+
+  (* --- G1 test harness --- *)
+  out(c, senc(Ksess_test, ksess)).
+
+
+(* ================================================================== *)
+(* Main process: setup and unbounded replication.                     *)
+(* ================================================================== *)
+
+process
+  new skA_sig: sskey;
+  new skG_sig: sskey;
+  let pkA_sig = spk(skA_sig) in
+  let pkG_sig = spk(skG_sig) in
+  out(c, (pkA_sig, pkG_sig));
+  (   ! aircraft(skA_sig, pkG_sig)
+    | ! ground(skG_sig, pkA_sig) )
