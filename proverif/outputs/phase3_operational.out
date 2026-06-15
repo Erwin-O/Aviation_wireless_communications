@@ -1,0 +1,263 @@
+Linear part:
+exp(exp(g,x),y) = exp(exp(g,y),x)
+Completing equations...
+Completed equations:
+exp(exp(g,x),y) = exp(exp(g,y),x)
+Convergent part: No equation.
+Process 0 (that is, the initial process):
+{1}new skA_sig: sskey;
+{2}new skG_sig: sskey;
+{3}let pkA_sig: spkey = spk(skA_sig) in
+{4}let pkG_sig: spkey = spk(skG_sig) in
+{5}out(c, (pkA_sig,pkG_sig));
+(
+    {6}!
+    {7}let skA_sig_1: sskey = skA_sig in
+    {8}new s: sessionid;
+    {9}new skA_eph: dhkey;
+    {10}let pkA_eph: element = exp(g,skA_eph) in
+    {11}let mKEY: bitstring = mkKey(A,G,s,spk(skA_sig_1),pkA_eph) in
+    {12}let sigA: bitstring = sign(mKEY,skA_sig_1) in
+    {13}event aircraftSentKey(A,G,s);
+    {14}out(c, (mKEY,sigA));
+    {15}in(c, (mKEYACK_bs: bitstring,sigG: bitstring));
+    {16}let mkKeyAck(=G,=A,=s,pkG_eph: element) = mKEYACK_bs in
+    {17}if (verify(sigG,pkG_sig,mKEYACK_bs) = true) then
+    {18}let z: element = exp(pkG_eph,skA_eph) in
+    {19}let ksess: skey = kdf(z,s) in
+    {20}event aircraftDerivesKsess(A,G,s);
+    {21}let tau: bitstring = hash((mKEY,mKEYACK_bs)) in
+    {22}let mKEYCONFIRM: bitstring = mkKeyConfirm(A,G,s,tau) in
+    {23}let tKC: bitstring = mac(mKEYCONFIRM,ksess) in
+    {24}event aircraftSentConfirm(A,G,s,tau);
+    {25}out(c, (mKEYCONFIRM,tKC));
+    {26}new payload_SA: bitstring;
+    {27}let mSA: bitstring = mkSA(A,G,s,payload_SA) in
+    {28}let tSA: bitstring = mac(mSA,ksess) in
+    {29}event aircraftSentSA(A,G,s,payload_SA);
+    {30}out(c, (mSA,tSA));
+    {31}in(c, (mCC_bs: bitstring,tCC: bitstring));
+    {32}let mkCC(=G,=A,=s,cc_type: bitstring,cc_body: bitstring) = mCC_bs in
+    {33}if (verifymac(tCC,ksess,mCC_bs) = true) then
+    {34}event aircraftAcceptsCC(A,G,s,cc_type,cc_body);
+    {35}let ack_hash: bitstring = hash(mCC_bs) in
+    {36}let mACK: bitstring = mkAck(A,G,s,ack_hash) in
+    {37}let tACK: bitstring = mac(mACK,ksess) in
+    {38}event aircraftSentAck(A,G,s,ack_hash);
+    {39}out(c, (mACK,tACK));
+    {40}out(c, senc(Ksess_test,ksess))
+) | (
+    {41}!
+    {42}let skG_sig_1: sskey = skG_sig in
+    {43}in(c, (mKEY_bs: bitstring,sigA_1: bitstring));
+    {44}let mkKey(=A,=G,s_1: sessionid,pkA_sig_in: spkey,pkA_eph_1: element) = mKEY_bs in
+    {45}if (pkA_sig_in = pkA_sig) then
+    {46}if (verify(sigA_1,pkA_sig,mKEY_bs) = true) then
+    {47}event groundAcceptsKey(A,G,s_1);
+    {48}new skG_eph: dhkey;
+    {49}let pkG_eph_1: element = exp(g,skG_eph) in
+    {50}let mKEYACK: bitstring = mkKeyAck(G,A,s_1,pkG_eph_1) in
+    {51}let sigG_1: bitstring = sign(mKEYACK,skG_sig_1) in
+    {52}event groundSentKeyAck(A,G,s_1);
+    {53}out(c, (mKEYACK,sigG_1));
+    {54}let z_1: element = exp(pkA_eph_1,skG_eph) in
+    {55}let ksess_1: skey = kdf(z_1,s_1) in
+    {56}in(c, (mKEYCONFIRM_bs: bitstring,tKC_1: bitstring));
+    {57}let mkKeyConfirm(=A,=G,=s_1,tau_recv: bitstring) = mKEYCONFIRM_bs in
+    {58}let tau_local: bitstring = hash((mKEY_bs,mKEYACK)) in
+    {59}if (tau_recv = tau_local) then
+    {60}if (verifymac(tKC_1,ksess_1,mKEYCONFIRM_bs) = true) then
+    {61}event groundAcceptsConfirm(A,G,s_1,tau_local);
+    {62}in(c, (mSA_bs: bitstring,tSA_1: bitstring));
+    {63}let mkSA(=A,=G,=s_1,payload_recv: bitstring) = mSA_bs in
+    {64}if (verifymac(tSA_1,ksess_1,mSA_bs) = true) then
+    {65}event groundAcceptsSA(A,G,s_1,payload_recv);
+    {66}new cc_body_1: bitstring;
+    {67}let mCC: bitstring = mkCC(G,A,s_1,typeINSTRUCTION,cc_body_1) in
+    {68}let tCC_1: bitstring = mac(mCC,ksess_1) in
+    {69}event groundSentCC(A,G,s_1,typeINSTRUCTION,cc_body_1);
+    {70}out(c, (mCC,tCC_1));
+    {71}in(c, (mACK_bs: bitstring,tACK_1: bitstring));
+    {72}let mkAck(=A,=G,=s_1,ack_hash_recv: bitstring) = mACK_bs in
+    {73}if (verifymac(tACK_1,ksess_1,mACK_bs) = true) then
+    {74}event groundAcceptsAck(A,G,s_1,ack_hash_recv);
+    {75}out(c, senc(Ksess_test,ksess_1))
+)
+
+--  Process 1 (that is, process 0, with let moved downwards):
+{1}new skA_sig: sskey;
+{2}new skG_sig: sskey;
+{4}let pkG_sig: spkey = spk(skG_sig) in
+{3}let pkA_sig: spkey = spk(skA_sig) in
+{5}out(c, (pkA_sig,pkG_sig));
+(
+    {6}!
+    {8}new s: sessionid;
+    {9}new skA_eph: dhkey;
+    {13}event aircraftSentKey(A,G,s);
+    {10}let pkA_eph: element = exp(g,skA_eph) in
+    {7}let skA_sig_1: sskey = skA_sig in
+    {11}let mKEY: bitstring = mkKey(A,G,s,spk(skA_sig_1),pkA_eph) in
+    {12}let sigA: bitstring = sign(mKEY,skA_sig_1) in
+    {14}out(c, (mKEY,sigA));
+    {15}in(c, (mKEYACK_bs: bitstring,sigG: bitstring));
+    {16}let mkKeyAck(=G,=A,=s,pkG_eph: element) = mKEYACK_bs in
+    {17}if (verify(sigG,pkG_sig,mKEYACK_bs) = true) then
+    {20}event aircraftDerivesKsess(A,G,s);
+    {21}let tau: bitstring = hash((mKEY,mKEYACK_bs)) in
+    {24}event aircraftSentConfirm(A,G,s,tau);
+    {22}let mKEYCONFIRM: bitstring = mkKeyConfirm(A,G,s,tau) in
+    {18}let z: element = exp(pkG_eph,skA_eph) in
+    {19}let ksess: skey = kdf(z,s) in
+    {23}let tKC: bitstring = mac(mKEYCONFIRM,ksess) in
+    {25}out(c, (mKEYCONFIRM,tKC));
+    {26}new payload_SA: bitstring;
+    {29}event aircraftSentSA(A,G,s,payload_SA);
+    {27}let mSA: bitstring = mkSA(A,G,s,payload_SA) in
+    {28}let tSA: bitstring = mac(mSA,ksess) in
+    {30}out(c, (mSA,tSA));
+    {31}in(c, (mCC_bs: bitstring,tCC: bitstring));
+    {32}let mkCC(=G,=A,=s,cc_type: bitstring,cc_body: bitstring) = mCC_bs in
+    {33}if (verifymac(tCC,ksess,mCC_bs) = true) then
+    {34}event aircraftAcceptsCC(A,G,s,cc_type,cc_body);
+    {35}let ack_hash: bitstring = hash(mCC_bs) in
+    {38}event aircraftSentAck(A,G,s,ack_hash);
+    {36}let mACK: bitstring = mkAck(A,G,s,ack_hash) in
+    {37}let tACK: bitstring = mac(mACK,ksess) in
+    {39}out(c, (mACK,tACK));
+    {40}out(c, senc(Ksess_test,ksess))
+) | (
+    {41}!
+    {43}in(c, (mKEY_bs: bitstring,sigA_1: bitstring));
+    {44}let mkKey(=A,=G,s_1: sessionid,pkA_sig_in: spkey,pkA_eph_1: element) = mKEY_bs in
+    {45}if (pkA_sig_in = pkA_sig) then
+    {46}if (verify(sigA_1,pkA_sig,mKEY_bs) = true) then
+    {47}event groundAcceptsKey(A,G,s_1);
+    {48}new skG_eph: dhkey;
+    {52}event groundSentKeyAck(A,G,s_1);
+    {49}let pkG_eph_1: element = exp(g,skG_eph) in
+    {50}let mKEYACK: bitstring = mkKeyAck(G,A,s_1,pkG_eph_1) in
+    {42}let skG_sig_1: sskey = skG_sig in
+    {51}let sigG_1: bitstring = sign(mKEYACK,skG_sig_1) in
+    {53}out(c, (mKEYACK,sigG_1));
+    {56}in(c, (mKEYCONFIRM_bs: bitstring,tKC_1: bitstring));
+    {57}let mkKeyConfirm(=A,=G,=s_1,tau_recv: bitstring) = mKEYCONFIRM_bs in
+    {58}let tau_local: bitstring = hash((mKEY_bs,mKEYACK)) in
+    {59}if (tau_recv = tau_local) then
+    {54}let z_1: element = exp(pkA_eph_1,skG_eph) in
+    {55}let ksess_1: skey = kdf(z_1,s_1) in
+    {60}if (verifymac(tKC_1,ksess_1,mKEYCONFIRM_bs) = true) then
+    {61}event groundAcceptsConfirm(A,G,s_1,tau_local);
+    {62}in(c, (mSA_bs: bitstring,tSA_1: bitstring));
+    {63}let mkSA(=A,=G,=s_1,payload_recv: bitstring) = mSA_bs in
+    {64}if (verifymac(tSA_1,ksess_1,mSA_bs) = true) then
+    {65}event groundAcceptsSA(A,G,s_1,payload_recv);
+    {66}new cc_body_1: bitstring;
+    {69}event groundSentCC(A,G,s_1,typeINSTRUCTION,cc_body_1);
+    {67}let mCC: bitstring = mkCC(G,A,s_1,typeINSTRUCTION,cc_body_1) in
+    {68}let tCC_1: bitstring = mac(mCC,ksess_1) in
+    {70}out(c, (mCC,tCC_1));
+    {71}in(c, (mACK_bs: bitstring,tACK_1: bitstring));
+    {72}let mkAck(=A,=G,=s_1,ack_hash_recv: bitstring) = mACK_bs in
+    {73}if (verifymac(tACK_1,ksess_1,mACK_bs) = true) then
+    {74}event groundAcceptsAck(A,G,s_1,ack_hash_recv);
+    {75}out(c, senc(Ksess_test,ksess_1))
+)
+
+-- Query not attacker(Ksess_test[]) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 149 rules (37 with conclusion selected). Queue: 33 rules.
+Starting query not attacker(Ksess_test[])
+RESULT not attacker(Ksess_test[]) is true.
+-- Query event(groundAcceptsKey(a,gs,s_2)) ==> event(aircraftSentKey(a,gs,s_2)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 150 rules (38 with conclusion selected). Queue: 33 rules.
+Starting query event(groundAcceptsKey(a,gs,s_2)) ==> event(aircraftSentKey(a,gs,s_2))
+goal reachable: b-event(aircraftSentKey(A[],G[],s_2)) -> event(groundAcceptsKey(A[],G[],s_2))
+Abbreviations:
+s_2 = s[!1 = @sid]
+RESULT event(groundAcceptsKey(a,gs,s_2)) ==> event(aircraftSentKey(a,gs,s_2)) is true.
+-- Query event(aircraftDerivesKsess(a,gs,s_2)) ==> event(groundSentKeyAck(a,gs,s_2)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 151 rules (37 with conclusion selected). Queue: 34 rules.
+Starting query event(aircraftDerivesKsess(a,gs,s_2)) ==> event(groundSentKeyAck(a,gs,s_2))
+goal reachable: b-event(groundSentKeyAck(A[],G[],s_2)) -> event(aircraftDerivesKsess(A[],G[],s_2))
+Abbreviations:
+s_2 = s[!1 = @sid]
+RESULT event(aircraftDerivesKsess(a,gs,s_2)) ==> event(groundSentKeyAck(a,gs,s_2)) is true.
+-- Query event(groundAcceptsConfirm(a,gs,s_2,t)) ==> event(aircraftSentConfirm(a,gs,s_2,t)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 156 rules (36 with conclusion selected). Queue: 34 rules.
+400 rules inserted. Base: 228 rules (50 with conclusion selected). Queue: 4 rules.
+Starting query event(groundAcceptsConfirm(a,gs,s_2,t)) ==> event(aircraftSentConfirm(a,gs,s_2,t))
+goal reachable: b-event(aircraftSentConfirm(A[],G[],s_2,hash((mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),mkKeyAck(G[],A[],s_2,exp(g,skG_eph_1)))))) -> event(groundAcceptsConfirm(A[],G[],s_2,hash((mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),mkKeyAck(G[],A[],s_2,exp(g,skG_eph_1))))))
+Abbreviations:
+s_2 = s[!1 = @sid]
+skA_eph_1 = skA_eph[!1 = @sid]
+skG_eph_1 = skG_eph[sigA_1 = sign(mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),skA_sig[]),mKEY_bs = mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),!1 = @sid_1]
+RESULT event(groundAcceptsConfirm(a,gs,s_2,t)) ==> event(aircraftSentConfirm(a,gs,s_2,t)) is true.
+-- Query event(groundAcceptsSA(a,gs,s_2,p)) ==> event(aircraftSentSA(a,gs,s_2,p)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 156 rules (36 with conclusion selected). Queue: 35 rules.
+400 rules inserted. Base: 233 rules (47 with conclusion selected). Queue: 6 rules.
+Starting query event(groundAcceptsSA(a,gs,s_2,p)) ==> event(aircraftSentSA(a,gs,s_2,p))
+goal reachable: b-event(aircraftSentSA(A[],G[],s_2,payload_SA_1)) -> event(groundAcceptsSA(A[],G[],s_2,payload_SA_1))
+Abbreviations:
+s_2 = s[!1 = @sid]
+skA_eph_1 = skA_eph[!1 = @sid]
+skG_eph_1 = skG_eph[sigA_1 = sign(mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),skA_sig[]),mKEY_bs = mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),!1 = @sid_1]
+payload_SA_1 = payload_SA[sigG = sign(mkKeyAck(G[],A[],s_2,exp(g,skG_eph_1)),skG_sig[]),mKEYACK_bs = mkKeyAck(G[],A[],s_2,exp(g,skG_eph_1)),!1 = @sid]
+RESULT event(groundAcceptsSA(a,gs,s_2,p)) ==> event(aircraftSentSA(a,gs,s_2,p)) is true.
+-- Query event(aircraftAcceptsCC(a,gs,s_2,t,b)) ==> event(groundSentCC(a,gs,s_2,t,b)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 151 rules (37 with conclusion selected). Queue: 35 rules.
+400 rules inserted. Base: 240 rules (52 with conclusion selected). Queue: 1 rules.
+Starting query event(aircraftAcceptsCC(a,gs,s_2,t,b)) ==> event(groundSentCC(a,gs,s_2,t,b))
+goal reachable: b-event(groundSentCC(A[],G[],s_2,typeINSTRUCTION[],cc_body_2)) -> event(aircraftAcceptsCC(A[],G[],s_2,typeINSTRUCTION[],cc_body_2))
+Abbreviations:
+s_2 = s[!1 = @sid]
+skA_eph_1 = skA_eph[!1 = @sid]
+skG_eph_1 = skG_eph[sigA_1 = sign(mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),skA_sig[]),mKEY_bs = mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),!1 = @sid_1]
+payload_SA_1 = payload_SA[sigG = sign(mkKeyAck(G[],A[],s_2,exp(g,skG_eph_1)),skG_sig[]),mKEYACK_bs = mkKeyAck(G[],A[],s_2,exp(g,skG_eph_1)),!1 = @sid]
+cc_body_2 = cc_body_1[tSA_1 = mac(mkSA(A[],G[],s_2,payload_SA_1),kdf(exp(exp(g,skG_eph_1),skA_eph_1),s_2)),mSA_bs = mkSA(A[],G[],s_2,payload_SA_1),tKC_1 = mac(mkKeyConfirm(A[],G[],s_2,hash((mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),mkKeyAck(G[],A[],s_2,exp(g,skG_eph_1))))),kdf(exp(exp(g,skG_eph_1),skA_eph_1),s_2)),mKEYCONFIRM_bs = mkKeyConfirm(A[],G[],s_2,hash((mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),mkKeyAck(G[],A[],s_2,exp(g,skG_eph_1))))),sigA_1 = sign(mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),skA_sig[]),mKEY_bs = mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),!1 = @sid_1]
+RESULT event(aircraftAcceptsCC(a,gs,s_2,t,b)) ==> event(groundSentCC(a,gs,s_2,t,b)) is true.
+-- Query event(groundAcceptsAck(a,gs,s_2,h)) ==> event(aircraftSentAck(a,gs,s_2,h)) in process 1.
+Translating the process into Horn clauses...
+Completing...
+200 rules inserted. Base: 152 rules (37 with conclusion selected). Queue: 36 rules.
+400 rules inserted. Base: 236 rules (50 with conclusion selected). Queue: 4 rules.
+Starting query event(groundAcceptsAck(a,gs,s_2,h)) ==> event(aircraftSentAck(a,gs,s_2,h))
+goal reachable: b-event(aircraftSentAck(A[],G[],s_2,hash(mkCC(G[],A[],s_2,typeINSTRUCTION[],cc_body_2)))) -> event(groundAcceptsAck(A[],G[],s_2,hash(mkCC(G[],A[],s_2,typeINSTRUCTION[],cc_body_2))))
+Abbreviations:
+s_2 = s[!1 = @sid]
+skA_eph_1 = skA_eph[!1 = @sid]
+skG_eph_1 = skG_eph[sigA_1 = sign(mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),skA_sig[]),mKEY_bs = mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),!1 = @sid_1]
+payload_SA_1 = payload_SA[sigG = sign(mkKeyAck(G[],A[],s_2,exp(g,skG_eph_1)),skG_sig[]),mKEYACK_bs = mkKeyAck(G[],A[],s_2,exp(g,skG_eph_1)),!1 = @sid]
+cc_body_2 = cc_body_1[tSA_1 = mac(mkSA(A[],G[],s_2,payload_SA_1),kdf(exp(exp(g,skG_eph_1),skA_eph_1),s_2)),mSA_bs = mkSA(A[],G[],s_2,payload_SA_1),tKC_1 = mac(mkKeyConfirm(A[],G[],s_2,hash((mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),mkKeyAck(G[],A[],s_2,exp(g,skG_eph_1))))),kdf(exp(exp(g,skG_eph_1),skA_eph_1),s_2)),mKEYCONFIRM_bs = mkKeyConfirm(A[],G[],s_2,hash((mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),mkKeyAck(G[],A[],s_2,exp(g,skG_eph_1))))),sigA_1 = sign(mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),skA_sig[]),mKEY_bs = mkKey(A[],G[],s_2,spk(skA_sig[]),exp(g,skA_eph_1)),!1 = @sid_1]
+RESULT event(groundAcceptsAck(a,gs,s_2,h)) ==> event(aircraftSentAck(a,gs,s_2,h)) is true.
+
+--------------------------------------------------------------
+Verification summary:
+
+Query not attacker(Ksess_test[]) is true.
+
+Query event(groundAcceptsKey(a,gs,s_2)) ==> event(aircraftSentKey(a,gs,s_2)) is true.
+
+Query event(aircraftDerivesKsess(a,gs,s_2)) ==> event(groundSentKeyAck(a,gs,s_2)) is true.
+
+Query event(groundAcceptsConfirm(a,gs,s_2,t)) ==> event(aircraftSentConfirm(a,gs,s_2,t)) is true.
+
+Query event(groundAcceptsSA(a,gs,s_2,p)) ==> event(aircraftSentSA(a,gs,s_2,p)) is true.
+
+Query event(aircraftAcceptsCC(a,gs,s_2,t,b)) ==> event(groundSentCC(a,gs,s_2,t,b)) is true.
+
+Query event(groundAcceptsAck(a,gs,s_2,h)) ==> event(aircraftSentAck(a,gs,s_2,h)) is true.
+
+--------------------------------------------------------------
+
