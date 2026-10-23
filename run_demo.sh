@@ -22,6 +22,8 @@ DEBUG_SCENARIO=1
 MODE="protocol"
 SPEED="1.0"
 PROVISION=1
+VERBOSE=0
+AIRCRAFT_WINDOW=1
 
 # If you already have launch_all_listeners.sh / tile_listeners.sh, we'll call them.
 LAUNCH_LISTENERS=1
@@ -56,7 +58,9 @@ Options:
 
   --legacy               Run the pre-conformance scripts instead
   --speed <factor>       Scenario speed multiplier (default: 1.0)
+  --verbose              Print every message, field by field, everywhere
   --no-provision         Do not reissue credentials before starting
+  --foreground           Run the aircraft here instead of in its own window
 
   -h, --help             Show this help
 
@@ -109,8 +113,8 @@ start_listeners() {
 
   if [[ -x "$launcher" ]]; then
     info "Launching stations via $launcher"
-    SCENARIO="$SCENARIO" SPEED="$SPEED" MQTT_HOST="$HOST" MQTT_PORT="$PORT" \
-      TOPIC_BASE="$TOPIC_BASE" "$launcher"
+    SCENARIO="$SCENARIO" SPEED="$SPEED" VERBOSE="$VERBOSE" \
+      MQTT_HOST="$HOST" MQTT_PORT="$PORT" TOPIC_BASE="$TOPIC_BASE" "$launcher"
   else
     warn "$launcher not found or not executable. Skipping stations."
   fi
@@ -140,6 +144,19 @@ start_listeners() {
     return 1
   }
 
+
+  # The aircraft is not a station, but it belongs in the tiled view: open its
+  # window before tiling so it is laid out with the rest.
+  if [[ "$MODE" == "protocol" && "$AIRCRAFT_WINDOW" -eq 1 && -n "$SCENARIO" ]]; then
+    if [[ -x "./visualisation/launch_aircraft.sh" ]]; then
+      info "Launching the aircraft in its own window"
+      SPEED="$SPEED" VERBOSE="$VERBOSE" MQTT_HOST="$HOST" MQTT_PORT="$PORT" \
+        TOPIC_BASE="$TOPIC_BASE" ./visualisation/launch_aircraft.sh "$SCENARIO"
+    else
+      warn "launch_aircraft.sh not executable; the aircraft will run here."
+      AIRCRAFT_WINDOW=0
+    fi
+  fi
 
   if [[ "$TILE" -eq 1 ]]; then
     if [[ -x "./visualisation/tile_listeners.sh" ]]; then
@@ -213,9 +230,15 @@ start_scenario() {
     return
   fi
 
+  if [[ "$AIRCRAFT_WINDOW" -eq 1 ]]; then
+    info "The aircraft is flying in its own window."
+    return
+  fi
+
   info "Flying $SCENARIO at ${SPEED}x (scripts/aircraft.py)"
   local extra=""
   [[ "$DEBUG_SCENARIO" -eq 1 ]] && extra="--debug"
+  [[ "$VERBOSE" -eq 1 ]] && extra="$extra --verbose"
   python3 scripts/aircraft.py \
     --scenario "$SCENARIO" \
     --host "$HOST" --port "$PORT" --base "$TOPIC_BASE" \
@@ -238,7 +261,9 @@ while [[ $# -gt 0 ]]; do
 
     --legacy) MODE="legacy"; shift ;;
     --speed) SPEED="$2"; shift 2 ;;
+    --verbose) VERBOSE=1; shift ;;
     --no-provision) PROVISION=0; shift ;;
+    --foreground) AIRCRAFT_WINDOW=0; shift ;;
 
     --record) RECORD=1; shift ;;
     --no-record) RECORD=0; shift ;;

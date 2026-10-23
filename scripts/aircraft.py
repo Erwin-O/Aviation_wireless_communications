@@ -27,6 +27,7 @@ from mqtt_client import MQTTClient                                # noqa: E402
 from protocol import identity, mqtt_binding as B, node as N       # noqa: E402
 from protocol import operational as O, session as S               # noqa: E402
 from protocol.rejection import Rejected                           # noqa: E402
+from scripts._display import banner                               # noqa: E402
 from scripts._scenario import load_aircraft_script                # noqa: E402
 
 TICK_SECONDS = 0.2
@@ -41,6 +42,10 @@ def main() -> int:
     ap.add_argument("--base", default=settings.TOPIC_BASE)
     ap.add_argument("--speed", type=float, default=1.0,
                     help="scenario speed multiplier (default: 1.0)")
+    ap.add_argument("--connect-tries", type=int, default=5,
+                    help="how many times to send the first KEY (default: 5)")
+    ap.add_argument("--verbose", "-v", action="store_true",
+                    help="print every message, field by field")
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args()
 
@@ -61,9 +66,13 @@ def main() -> int:
 
     def send(out):
         for m in out:
-            client.publish(B.topic_for(m.role, m.to, args.base), m.raw)
+            topic = B.topic_for(m.role, m.to, args.base)
+            client.publish(topic, m.raw)
             counts["sent"] += 1
-            print(f"  -> {m.role:14s} {m.to}")
+            if args.verbose:
+                print(banner("->", m.role, m.to, m.raw, topic))
+            else:
+                print(f"  -> {m.role:14s} {m.to}")
 
     def on_message(topic: str, payload: bytes):
         now = datetime.now(timezone.utc)
@@ -86,7 +95,10 @@ def main() -> int:
                 traceback.print_exc()
             return
         counts["received"] += 1
-        print(f"  <- {role:14s} accepted")
+        if args.verbose:
+            print(banner("<-", role, "accepted", payload, topic))
+        else:
+            print(f"  <- {role:14s} accepted")
         send(out)
 
     sub = B.subscription_for(me, args.base)
@@ -103,17 +115,25 @@ def main() -> int:
         return 1
 
     time.sleep(1.0)                      # let the stations' subscriptions settle
+    # Establish before starting the scenario clock: a report built for a
+    # session that does not exist is not built at all. The KEY is repeated
+    # while we wait, so it does not matter whether the station was listening
+    # when the first one went out.
     print(f"[{me}] establishing with {first_station}")
-    send(aircraft.connect(first_station, datetime.now(timezone.utc)))
-
-    # Wait for the handshake before starting the scenario clock: reports sent
-    # into a session that does not exist yet would simply not be built.
-    for _ in range(50):
-        row = aircraft.table.get(first_station)
-        if row is not None and row.state is S.State.ESTABLISHED:
+    established = False
+    for attempt in range(args.connect_tries):
+        send(aircraft.connect(first_station, datetime.now(timezone.utc)))
+        for _ in range(20):
+            row = aircraft.table.get(first_station)
+            if row is not None and row.state is S.State.ESTABLISHED:
+                established = True
+                break
+            time.sleep(0.1)
+        if established:
             break
-        time.sleep(0.1)
-    else:
+        print(f"[{me}] no answer from {first_station}, retrying "
+              f"({attempt + 1}/{args.connect_tries})")
+    if not established:
         print(f"[{me}] no session with {first_station}; flying anyway")
 
     started = time.monotonic()

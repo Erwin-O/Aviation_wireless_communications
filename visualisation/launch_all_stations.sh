@@ -14,6 +14,7 @@ set -euo pipefail
 # Environment:
 #   SCENARIO   scenario file, so each station plays its own controller script
 #   SPEED      scenario speed multiplier (default 1.0)
+#   VERBOSE=1  print every message, field by field
 #   DEBUG=1 with DEBUG_STATIONS=("EBBR GND" ...) starts only those
 #
 
@@ -25,6 +26,7 @@ MQTT_PORT="${MQTT_PORT:-1883}"
 TOPIC_BASE="${TOPIC_BASE:-aviation}"
 SCENARIO="${SCENARIO:-}"
 SPEED="${SPEED:-1.0}"
+VERBOSE="${VERBOSE:-0}"
 
 # Stations that hold a credential. Must match scripts/provision.py.
 STATIONS=(
@@ -69,6 +71,7 @@ run_station() {
 
   local EXTRA=""
   is_debug_station "$STATION" && EXTRA="--debug"
+  [[ "$VERBOSE" == "1" ]] && EXTRA="$EXTRA --verbose"
   [[ -n "$SCENARIO" ]] && EXTRA="$EXTRA --scenario '$SCENARIO' --speed $SPEED"
 
   local CMD

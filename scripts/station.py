@@ -29,6 +29,7 @@ from mqtt_client import MQTTClient                                # noqa: E402
 from protocol import credentials, identity, mqtt_binding as B     # noqa: E402
 from protocol import node as N                                    # noqa: E402
 from protocol.rejection import Rejected                           # noqa: E402
+from scripts._display import banner                               # noqa: E402
 from scripts._scenario import load_station_script                 # noqa: E402
 
 TICK_SECONDS = 1.0
@@ -44,6 +45,8 @@ def main() -> int:
     ap.add_argument("--scenario", help="enqueue this station's instructions")
     ap.add_argument("--speed", type=float, default=1.0,
                     help="scenario speed multiplier (default: 1.0)")
+    ap.add_argument("--verbose", "-v", action="store_true",
+                    help="print every message, field by field")
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args()
 
@@ -63,7 +66,10 @@ def main() -> int:
         for m in out:
             topic = B.topic_for(m.role, m.to, args.base)
             client.publish(topic, m.raw)
-            print(f"  -> {m.role:14s} {m.to}")
+            if args.verbose:
+                print(banner("->", m.role, m.to, m.raw, topic))
+            else:
+                print(f"  -> {m.role:14s} {m.to}")
 
     def on_message(topic: str, payload: bytes):
         now = datetime.now(timezone.utc)
@@ -83,7 +89,10 @@ def main() -> int:
                 import traceback
                 traceback.print_exc()
             return
-        print(f"  <- {role:14s} accepted")
+        if args.verbose:
+            print(banner("<-", role, "accepted", payload, topic))
+        else:
+            print(f"  <- {role:14s} accepted")
         send(out)
 
     # mqtt_client passes paho's own callback signatures through. Subscribing

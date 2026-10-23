@@ -112,7 +112,37 @@ def main() -> int:
 
     print(f"\n{issued} credentials, valid until {not_after:%Y-%m-%d %H:%M} UTC")
     print(f"keys and credentials under {identity.LOCAL_DIR}")
+
+    bad = _verify_all(args.issuer)
+    if bad:
+        print(f"\n{len(bad)} credential(s) DO NOT verify against the trust "
+              f"anchor just written:")
+        for name, why in bad:
+            print(f"  {name}: {why}")
+        return 1
+    print("every credential verifies against the trust anchor")
     return 0
+
+
+def _verify_all(issuer: str) -> list[tuple[str, str]]:
+    """
+    Check what was just issued actually verifies.
+
+    Worth doing on every run: if the anchors file and the issuer's key drift
+    apart, every message in the demo is refused at issuer_signature, which is
+    the correct answer to the wrong question and takes a while to recognise.
+    """
+    anchors = identity.load_trust_anchors()
+    now = datetime.now(timezone.utc)
+    bad: list[tuple[str, str]] = []
+    for name in list(AIRCRAFT) + list(STATIONS):
+        try:
+            raw = identity.load_identity(name).credential
+            credentials.verify(raw, trust_anchors=anchors, now=now,
+                               expect_subject=name)
+        except Exception as exc:                                  # noqa: BLE001
+            bad.append((name, str(exc)))
+    return bad
 
 
 def _show() -> int:
