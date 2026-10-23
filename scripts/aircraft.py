@@ -15,6 +15,9 @@ Credentials come from scripts/provision.py; this script issues none.
 from __future__ import annotations
 
 import argparse
+import atexit
+import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -62,6 +65,7 @@ def main() -> int:
     print(f"[{me}] {len(events)} scenario events, "
           f"{len(handovers)} station(s): {', '.join(s for _, s in handovers)}")
 
+    _write_pidfile(me)
     client = MQTTClient(client_id=f"aircraft-{B.slug(me)}")
 
     def send(out):
@@ -158,6 +162,23 @@ def main() -> int:
         client.disconnect()
     return 0
 
+
+def _write_pidfile(name: str) -> Path:
+    """
+    Record this process so stop_all_listeners.sh can end it by PID.
+
+    Matching on command lines is how the old script did it, and it is a poor
+    way to decide what to kill: a shell whose command line happens to mention
+    the script matches too. A window whose process is still alive when
+    Terminal closes it is what produces "Do you want to terminate running
+    processes in this window?", so the stop path has to be exact.
+    """
+    d = Path(__file__).resolve().parents[1] / "logs" / "pids"
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / f"{re.sub(r'[^A-Za-z0-9_.-]+', '_', name)}.pid"
+    path.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    atexit.register(lambda: path.unlink(missing_ok=True))
+    return path
 
 def _await_connection(client, seconds: float = 10.0) -> bool:
     deadline = time.monotonic() + seconds
