@@ -94,50 +94,44 @@ fi
 echo
 echo "Closing Terminal windows for AV-LISTENER tabs…"
 
-osascript <<'EOF'
+CLOSED=$(osascript <<'APPLESCRIPT'
+-- Close the demo's windows.
+--
+-- Filter on the window's name rather than walking its tabs. Asking for
+-- "every tab of window id N" raises -1728 on a window Terminal will not
+-- enumerate, and because that error propagates out of the whole script,
+-- nothing gets closed at all. run_demo.sh already counts these windows with
+-- the same "name contains" filter, so it is known to work.
+--
+-- Each close is guarded separately: one window that refuses must not stop
+-- the rest.
 tell application "Terminal"
-    set windowsToClose to {}
+    set targets to {}
+    try
+        set targets to (every window whose name contains "AV-LISTENER:")
+    end try
 
-    set n to count of windows
-    repeat with i from 1 to n
-        try
-            set w to window i
-        on error
-            set w to missing value
-        end try
-
-        if w is not missing value then
-            set shouldClose to false
-
-            repeat with t in tabs of w
-                set tTitle to ""
-                try
-                    set tTitle to custom title of t
-                end try
-
-                if tTitle is not "" then
-                    if tTitle begins with "AV-LISTENER:" then
-                        set shouldClose to true
-                    end if
-                end if
-            end repeat
-
-            if shouldClose is true then
-                copy w to end of windowsToClose
-            end if
-        end if
-    end repeat
-
-    repeat with w in windowsToClose
+    set closedCount to 0
+    repeat with w in targets
         try
             close w saving no
+            set closedCount to closedCount + 1
         on error
             try
                 close w
+                set closedCount to closedCount + 1
             end try
         end try
     end repeat
+    return closedCount
 end tell
-EOF
+APPLESCRIPT
+)
+
+if [ -z "$CLOSED" ]; then
+  echo "  could not talk to Terminal; close the windows by hand."
+else
+  echo "  closed $CLOSED window(s)."
+fi
 
 echo "Done."
