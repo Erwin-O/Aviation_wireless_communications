@@ -1,376 +1,409 @@
 # Secure Aviation Messaging Prototype – Developer Guide
 
+How the implementation works and how to change it. `CODE_INDEX.md` lists the
+files; `MODULE DEPENDENCIES.md` maps the imports; `USER GUIDE.md` covers
+running it.
+
+---
+
 ## 1. Introduction
 
-The **Developer Guide** describes the internal architecture, modules, file structure, data flows, and cryptographic mechanisms of the *Secure Aviation Messaging Prototype*. It is intended for engineers who want to:
+This repository implements the air–ground communication protocol specified in
+Section 3.3 of the IJCIP paper. The implementation exists to establish that
+the specification can be realised as written, and that each check it requires
+rejects the input it is meant to reject.
 
-* Understand how the system works internally.
-* Modify, extend, or customise components.
-* Add new stations, aircraft, or message types.
-* Debug cryptographic validation, message routing, or scenario behaviour.
+That second claim is the one that shapes the code. Every refusal anywhere in
+`protocol/` raises `Rejected` carrying a `Step`, and the tests assert the
+step rather than merely the refusal, because a message refused for the wrong
+reason demonstrates nothing about the check under test.
 
----
-
-## 2. System Architecture Overview
-
-```
-scripts/scenario_player.py  ──► MQTT Broker ──►  scripts/demo_subscriber.py
-                                      │
-                               scripts/mqtt_recorder.py
-
-Shared packages
-  encryption/   – all cryptographic primitives
-  core/         – message format, session state, key registry, logger
-  config/       – public-key registry, station private-key loader
-  utils/        – station normalisation, aircraft reg normalisation, JSON DB loaders
-  mqtt_client.py – Paho wrapper (root-level module)
-  settings.py   – runtime configuration (root-level module)
-```
-
-### 2.1 Package Layout
-
-```
-encryption/
-  crypto.py     Ed25519, X25519, BLAKE3/ASCON-MAC
-  ascon.py      vendored ASCON (never modify)
-
-core/
-  messages.py   ASCII wire builders, KEY signing string, parser
-  comm_state.py session state (SessionBook, AircraftSessionBook)
-  registry.py   public + private key lookup
-  logger.py     unified file logger
-
-config/
-  station_keys.py   load local station private keys
-  publicKeys.json   public key registry (written by add_actor.py)
-  aircraft_db.json  aircraft metadata
-  airports_db.json  airport + en-route unit metadata
-
-utils/
-  station_norm.py   normalise_station() / pretty_station()
-  regnorm.py        normalise_reg()
-  registry.py       LRU-cached JSON DB loaders
-
-scripts/          thin CLI entry points
-visualisation/    macOS shell scripts (launch, tile, stop)
-scenarios/        scenario JSON files
-```
-
-### 2.2 High-Level Message Flow
-
-For each outbound message:
-
-1. `scenario_player` constructs raw data.
-2. Signs it with **Ed25519** (KEY) or computes **BLAKE3/ASCON-MAC** (SA/CC).
-3. Wraps session key with **X25519 + ChaCha20-Poly1305** (KEY only).
-4. Publishes via MQTT under structured topics.
-5. Ground stations receive, filter, verify, and display messages.
+The earlier prototype is still present under `core/` and the legacy scripts.
+It implements a different protocol and is kept only for reproducibility.
 
 ---
 
-## 3. Cryptography Subsystem
+## 2. Architecture
 
-Implemented in **`encryption/crypto.py`**.
-
-### 3.1 Key Types
-
-* **Ed25519** → Authentication and integrity via detached signatures.
-* **X25519** → Key exchange for secure session key delivery.
-* **Session keys** → Symmetric 32-byte keys used to authenticate SA/CC messages.
-
-### 3.2 KEY Message Signing (Option B — wire-format signing)
-
-The Ed25519 signature on a KEY message covers the wire payload directly — everything above the `KEY SIG:` line, newline-separated:
+### 2.1 Layers
 
 ```
-TIMESTAMP: <ts>
-FROM: <aircraft>
-TO: <station>
-PUBLIC KEY: <ed25519_pub_b64u>
-SESSION ID: <sid>
-WRAPPED SESSION KEY: <wrapped_b64u>
+scripts/aircraft.py   scripts/station.py        processes, MQTT, scenarios
+         \                 /
+          protocol/node.py                      endpoint behaviour
+                 |
+   protocol/operational.py  protocol/handshake.py
+                 |                  |
+          protocol/session.py  protocol/credentials.py
+                 \                  /
+            protocol/primitives.py  protocol/encoding.py
+                          |
+                 encryption/ascon.py, cryptography
 ```
 
-**Sender** (`scenario_player`):
+Each layer may use the one below it and never the one above. `node.py` knows
+nothing of MQTT; `mqtt_binding.py` knows nothing of sessions.
+
+### 2.2 Why a node layer
+
+`protocol/node.py` holds `Aircraft` and `Station` as objects that take a
+message and return the messages it obliges them to send. The transport is
+whatever calls them. That is what makes the MQTT scripts thin, and it is also
+what lets `tests/test_node.py` run whole flights with no sockets at all.
+
+---
+
+## 3. The wire format
+
+One field per line, `NAME: value`, terminated by CRLF, printable ASCII.
+
+```
+ROLE: SA
+TIMESTAMP: 2026-10-23T05:44:16+00:00
+FROM: OOABC
+TO: EBBR GND
+ALTITUDE: 165
+ALT_REF: BARO_QNH
+POSITION: 50.901981 LAT 4.482942 LONG
+SPEED: 0
+HEADING: 334
+ON_GROUND: 1
+LAST_EXEC: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+CHALLENGE: cQNrat6ILCJf1W1qSTrFYZcsdar7RgN8rRDsbb--Ncw
+MAC: oxmXF3N6ZvlKer4vopHXRA
+```
+
+### 3.1 The rule that matters
+
+**The bytes on the wire are the bytes that are authenticated.** There is no
+canonicalisation step. A sender builds the byte string once, authenticates a
+prefix of it and sends it; a receiver authenticates the prefix of what
+arrived.
+
 ```python
-sign_core = build_key_core(ts, frm, to, pubkey_b64u, sid, wrapped)
-sig = sign_detached_b64u(ed25519_priv, sign_core.encode("utf-8"))
-payload = ascii_key({…, "key_sig_b64": sig})
+body = encoding.encode(fields)                     # built once
+wire = body + encoding.encode([("MAC", tag)])      # tag covers exactly `body`
+
+region = encoding.authenticated_region(raw, "MAC") # sliced from what arrived
+primitives.verify_mac(key, region, tag)
 ```
 
-**Receiver** (`demo_subscriber`):
-```python
-sign_core = key_signing_material(raw_payload)   # strips KEY SIG line
-ok = ed25519_verify(ed_pub_b64u, sign_core, sig)
-```
+Never verify against a re-encoding of parsed fields. If you find yourself
+calling `encode` on the receive path, something has gone wrong.
 
-Both functions are in `core/messages.py`. The receiver never reconstructs the signing string from parsed fields — it uses the raw wire bytes, ensuring byte-exact verification.
+### 3.2 Strictness
 
-### 3.3 Session Key Wrapping
-
-Applied only to KEY messages:
-
-```
-shared_secret = X25519(sender_x_priv, receiver_x_pub)
-wrapped_key   = ChaCha20-Poly1305(key=BLAKE3(shared_secret), plaintext=session_key)
-```
-
-`wrap_session_key()` / `unwrap_session_key()` are in `encryption/crypto.py`.
-
-### 3.4 MAC Algorithm Selection
-
-The data-plane MAC is configurable via `settings.MAC_ALG`:
-
-* `"BLAKE3"` (default) — 32-byte keyed MAC; uses the full 32-byte session key.
-* `"ASCON-MAC"` — 16-byte tag; uses `session_key[:16]`. `encryption/ascon.py` is vendored (no pip install required).
-
-Switching is done by changing one line in `settings.py`. All MAC computation is centralised in `encryption.crypto.compute_mac()` / `compute_mac_b64u()`; scenario player and subscriber call only those functions.
-
-### 3.5 Station Normalisation
-
-Defined in `utils/station_norm.py`:
-
-* `normalise_station()` — canonical internal name (e.g. `"EBBR GND"` → `"EBBR_GND"`). Used for all internal addressing and key lookups.
-* `pretty_station()` — human-readable label for display **only**. Never use for addressing.
-* `normalise_reg()` in `utils/regnorm.py` — canonical aircraft registration (e.g. `"OO-ABC"` → `"OOABC"`).
+`parse` rejects duplicate fields, non-ASCII values, missing terminators and
+malformed lines. "A message admits exactly one parse" is a security property,
+not a convenience, and a tolerant parser is how two implementations come to
+disagree about what was signed.
 
 ---
 
-## 4. Session State (`core/comm_state.py`)
+## 4. Cryptography
 
-### 4.1 Data Structures
-
-**`SessionEntry`** (dataclass):
-```
-session_id: str
-key: bytes      # 32-byte symmetric session key
-```
-
-**`SessionBook`** — generic store keyed by any string:
-```
-get(key)  → SessionEntry | None
-put(key, entry)
-drop(key)
-```
-
-**`AircraftSessionBook`** (extends `SessionBook`) — aircraft-side:
-```
-current_station()               → str
-set_station(station)
-get_session(station)            → SessionEntry | None
-put_session(station, entry)
-drop_session(station)
-already_handover(old, new, t_s) → bool   (deduplicates handover events)
-```
-
-### 4.2 Session Lifecycle
-
-1. Ground station receives a **KEY** message.
-2. Verifies the Ed25519 signature via `key_signing_material()`.
-3. Unwraps session key with its own X25519 private key.
-4. Stores the session in `SessionBook`.
-5. All subsequent SA/CC messages require a known session — rejected if none exists.
-
----
-
-## 5. MQTT Layer
-
-### 5.1 Topic Structure
-
-```
-aviation/sec/key/<aircraft>       KEY messages
-aviation/pos/sa/<aircraft>        SA position reports
-aviation/cc/<type>/<aircraft>     CC control commands
-aviation/sec/ack/<station>        ACK replies (subscriber → aircraft)
-```
-
-### 5.2 Broker
-
-Default setup (Mosquitto):
-
-* Host: `127.0.0.1`
-* Port: `1883`
-
-### 5.3 Note on ACKs
-
-`demo_subscriber` publishes ACKs to `aviation/sec/ack/<to>` but `scenario_player` does not subscribe to that topic. ACKs are one-way in the current prototype — they are logged but not processed by the sender side.
-
----
-
-## 6. Ground Station Listener (`scripts/demo_subscriber.py`)
-
-### 6.1 Address Filtering
-
-When `--only-for-us` is set:
-```python
-if to_norm not in (self.station_id, "ALL", "BROADCAST", ""):
-    ignore message
-```
-
-### 6.2 KEY Handling
-
-1. Parse ASCII block with `parse_ascii_block()`.
-2. Verify public key matches registry.
-3. Extract signing material with `key_signing_material(raw_payload)`.
-4. Verify Ed25519 signature.
-5. Unwrap X25519 session key.
-6. Store session; queue SESSION_ACK.
-7. Log via `logger.event("session learned", …)` and `logger.wire("KEY", …)`.
-
-### 6.3 SA Handling
-
-1. Verify session exists.
-2. Parse altitude, position, speed, heading, on-ground flag.
-3. Print only when state changes or at periodic intervals.
-
-### 6.4 CC Handling
-
-1. Parse and validate required fields.
-2. Display content; log via `logger.wire("CC", …)`.
-3. If addressed to this station and session known: queue CC_ACK with random delay.
-
----
-
-## 7. Scenario Engine (`scripts/scenario_player.py`)
-
-### 7.1 Scenario File Structure
-
-```json
-{
-  "flight": {
-    "aircraft_id": "OOABC",
-    "initial_station": "EBBR_GND"
-  },
-  "events": [ … ]
-}
-```
-
-### 7.2 Supported Event Types
-
-* **KEY** → explicit session creation for a named station
-* **SA** → position report
-* **CC** → clearance / request / instruction; `CONTACT` triggers a handover
-
-### 7.3 Timing Jitter
-
-CC timestamps are randomised:
-```
-t_actual = t_nominal + Normal(μ = 0, σ = 5s), clamped ±15s
-```
-
-### 7.4 Logging
-
-A `Logger` is created once in `main()` with `component = aircraft_id`. Wire payloads go to `logger.wire()`, session and handover events go to `logger.event()`.
-
----
-
-## 8. Unified Logger (`core/logger.py`)
-
-`get_logger(component)` returns a `Logger` that writes structured log files to `logs/`:
-
-| Level | Method | Written when |
+| Purpose | Primitive | Where |
 |---|---|---|
-| WIRE | `logger.wire(msg, data)` | Always (LOG_LEVEL = any) |
-| LIMITED | `logger.event(msg, data)` | LOG_LEVEL ∈ {LIMITED, FULL} |
-| FULL | `logger.debug(msg, data)` | LOG_LEVEL = FULL only |
+| Long-term signatures | Ed25519 | credentials, KEY, KEYACK |
+| Ephemeral key agreement | X25519 | KEY, KEYACK |
+| Message authentication | Ascon-Mac, 16-byte tag | all operational messages, KEYCONFIRM |
+| Hashing | Ascon-Hash256 | ephemeral derivation, challenge, transcript, ACK digest |
+| Key derivation | Ascon-CXOF128 | session key |
 
-File format is controlled by `settings.LOG_FORMAT`:
-* `TXT` → `logs/<component>.txt` — human-readable timestamped lines
-* `JSON` → `logs/<component>.jsonl` — one JSON object per line
-* `BOTH` → both files simultaneously (default)
+### 4.1 Domain separation
 
-On startup, existing files are renamed to `.prev` if `settings.LOG_BACKUP = True`.
+Every use of Ascon-Hash256 prefixes a fixed label:
 
-Console (`print()`) output is separate and continues to be captured by `tee` in the launch scripts.
+```python
+L_EPH = b"AGCP-v1:ephemeral\x00"
+L_CH  = b"AGCP-v1:challenge\x00"
+L_TR  = b"AGCP-v1:transcript\x00"
+L_ACK = b"AGCP-v1:ackhash\x00"
+```
+
+They share a prefix and end with a NUL, and no label contains a NUL, so the
+set is prefix-free: no label followed by one input can equal another label
+followed by a different input. A test asserts this. If you add a label, keep
+the shape.
+
+### 4.2 Ephemeral derivation
+
+```python
+r = primitives.random_r()                                  # 32 bytes
+scalar = primitives.derive_ephemeral_scalar(r, kex_secret) # eq. (1)
+```
+
+The private scalar is not taken directly from the platform's random number
+generator. An adversary that predicts `r` in full still cannot predict the
+scalar without the long-term key-exchange secret, which is what makes the
+weak-randomness goal attainable. Only the private half of that long-term pair
+is ever used, so it appears in no credential.
+
+### 4.3 The transcript
+
+```python
+h = Ascon-Hash256(L_tr ‖ m_KEY ‖ 0x00 ‖ m_KEYACK)
+```
+
+The `0x00` fixes the boundary between the two bodies. Without it `h(x, yz)`
+would equal `h(xy, z)` and the confirmation would bind the parties to a
+concatenation rather than to the exchange. A message body is printable ASCII
+with CRLF terminators, so a zero byte cannot occur inside one.
 
 ---
 
-## 9. Configuration & Databases
+## 5. Credentials
 
-### 9.1 `config/publicKeys.json`
+A credential is a signed labelled record:
 
-All public Ed25519 + X25519 identity keys. Written by `add_actor.py`.
+```
+ISSUER: BE CAA
+SUBJECT: EBBR GND
+VERIFY_KEY: <base64url>
+NOT_BEFORE: 2026-10-23T05:02:50+00:00
+NOT_AFTER: 2026-10-30T05:07:50+00:00
+PERMITTED_ROLES: KEYACK,CC:CLEARANCE,CC:INSTRUCTION,CC:CONTACT,CC:EMERGENCY,CC:SYSTEM
+SECTOR: EBBU.EBBR
+ISSUER_SIG: <base64url>
+```
 
-### 9.2 `config/aircraft_db.json`
+A receiver holds **issuer keys**, not a directory of principals, which is
+what lets a station verify an aircraft it has never heard of.
 
-Aircraft metadata (ICAO24, registration, type, operator).
+### 5.1 The verification order
 
-### 9.3 `config/airports_db.json`
+Specified, and not an implementation detail:
 
-Airport and en-route unit metadata. Used by `utils/station_norm.py` for name resolution.
+1. the issuer signature on the credential, against a trust anchor
+2. the validity interval, against the receiver's clock
+3. the subject identity, against the message's `FROM`
+4. the sector scope, against the airspace at issue
+5. and only then the message signature, against the credential's `VERIFY_KEY`
+
+Failure at any step discards the message. A message failing two checks must
+report the earlier one, and `tests/test_credentials.py` asserts exactly that.
+
+### 5.2 Role admission
+
+`Credential.permits(role)` is an **exact** match. A credential listing `CC`
+permits no subtype; a station must list `CC:CLEARANCE` to issue a clearance.
+The conservative reading, since `CC:CONTACT` is what nominates a successor.
+
+Handshake roles are exempt: any principal holding a valid credential may
+establish a session, and what its credential permits governs only what it may
+do afterwards.
+
+### 5.3 Sector
+
+Sector enforcement is a **ground-side** obligation about the station's *own*
+entitlement: "am I credentialled for the airspace this aircraft reports being
+in?" An aircraft's credential carries no `SECTOR`. Requiring the aircraft to
+check would oblige every aircraft to carry current airspace boundary data, so
+it is optional there.
+
+```python
+operational.receive(raw, table, now, local="EBBR GND", as_aircraft=False,
+                    local_sector="EBBU.EBBR", airspace="EBBU.NORTH")
+```
+
+Mapping a reported position to an airspace needs boundary data, so the caller
+does it and passes the result.
 
 ---
 
-## 10. Setup
-
-### 10.1 Editable Install
-
-After cloning, run once inside the venv:
+## 6. Session establishment
 
 ```
-pip install -e .
+aircraft                                   ground station
+  |-- KEY ------------------------------------>|  credential + ephemeral, signed
+  |<-------------------------------- KEYACK ---|  credential + ephemeral, signed
+  |                                            |  pending
+  |-- KEYCONFIRM ----------------------------->|  transcript, tagged under K_sess
+  |                                            |  established
 ```
 
-This registers the repo root via `pyproject.toml` so all packages and root-level modules are importable from any script without `sys.path` hacks.
+Both parties discard their ephemeral private scalars once `K_sess` is
+derived. **No session identifier is carried**: the key distinguishes sessions,
+because `Z` depends on scalars generated for that session alone. A test greps
+the wire bytes to make sure no such field creeps back in.
 
-### 10.2 Private Keys
-
-Each actor needs a local key directory:
-```
-~/AviationLocalKeys/<ACTOR_ID>/ed25519_private.key
-~/AviationLocalKeys/<ACTOR_ID>/x25519_private.key
-```
-
-Generate them with:
-```
-python3 scripts/add_actor.py add <ACTOR_ID> <type>
-```
+One refinement on the paper, flagged in `handshake.py`: the acceptance-window
+check on `TIMESTAMP` runs *before* the credential order, so a message outside
+the window costs a receiver no signature verification. The relative order the
+paper specifies is preserved within that.
 
 ---
 
-## 11. Extending the System
+## 7. Session states
 
-### 11.1 Adding New Stations
+| State | Entered | Traffic |
+|---|---|---|
+| `PENDING` | station on sending KEYACK; aircraft on receiving it | none |
+| `ESTABLISHED` | station on verifying KEYCONFIRM; aircraft on sending it | everything |
+| `HANDOVER` | on a nomination accepted | everything except `COMMAND_ROLES` |
 
-```
-python3 scripts/add_actor.py add <STATION_ID> <type>
-```
+`COMMAND_ROLES` is `CC:CLEARANCE`, `CC:INSTRUCTION`, `CC:CONTACT` — what an
+aircraft acts upon. `CC:SYSTEM` and `CC:EMERGENCY` keep flowing during
+handover by design, which is also why they are not gated on a challenge.
 
-Where `<type>` is one of: `aircraft`, `atc`, `enroute`, `ground`, `test`, `tower`, `uav`.
+The two endpoints leave `HANDOVER` by different means, and that asymmetry is
+what lets a transfer need no channel between ground stations:
 
-Then add the station name to `STATIONS` in `visualisation/launch_all_listeners.sh`.
-
-### 11.2 Adding New Message Types
-
-Modify:
-* `core/messages.py` — add ASCII builder and update `parse_ascii_block()`
-* `scripts/scenario_player.py` — add publish function and event-loop branch
-* `scripts/demo_subscriber.py` — add handler and subscribe to new topic
-
-### 11.3 Switching MAC Algorithm
-
-Change `settings.MAC_ALG` to `"ASCON-MAC"`. No other files need updating.
+- **aircraft** — when a session with the successor reaches `ESTABLISHED`
+  (`SessionTable.establish` drops the handover row), or on `revert` after
+  Δt_ho or a failed attempt, sending a `CC:SYSTEM` notification.
+- **station** — on that notification, or on expiry of Δt_ho, which
+  `SessionTable.expire` applies.
 
 ---
 
-## 12. Troubleshooting
+## 8. The challenge exchange
 
-### "Could not load private keys"
+Four rules, implemented as four named functions in `session.py`:
 
-Check `~/AviationLocalKeys/<STATION>/` for `ed25519_private.key` and `x25519_private.key`.
+| Rule | Function |
+|---|---|
+| Every message the aircraft sends carries a fresh challenge; sending retires the one before | `arm(row, kex_secret, now)` |
+| A command is acted upon only if its `IN_REPLY_TO` equals the outstanding challenge | `may_act(row, in_reply_to)` |
+| On acting, `LAST_EXEC` becomes that challenge and the challenge is retired | `record_execution(row)` |
+| The station reads `LAST_EXEC` to decide whether to resend or advance | `station_should_resend(row, reported)` |
+| The aircraft sends at least every Δt_rep | `overdue(row, now)` |
 
-### "no session known; skip"
+`LAST_EXEC` is information for the station's decision and **never** a
+condition on accepting the message carrying it. That is what makes the
+exchange tolerant of loss:
 
-The KEY message has not yet arrived or was dropped. Enable `--debug` on the subscriber to see why.
+- a lost report changes nothing;
+- a lost command leaves `LAST_EXEC` unchanged, so its sender learns on the
+  next report and resends bound to the newer challenge — no timer, the
+  reporting interval is the retry interval;
+- a command delivered out of turn, or replayed, is bound to a retired
+  challenge and refused.
 
-### "KEY signature INVALID — dropped"
+An acknowledgement carries the next challenge, so an acknowledged command
+re-arms the exchange at once rather than at the next report. Two queued
+instructions therefore go out on a single report.
 
-The signing material (wire payload above KEY SIG line) did not match between sender and receiver. Check that `build_key_core()` in `scenario_player` and `key_signing_material()` in `demo_subscriber` are using the same raw text.
-
-### Listener windows not closing
-
-```
-./visualisation/stop_all_listeners.sh
-```
+Nothing crosses a transfer: a new session starts with `LAST_EXEC` at zero and
+nothing outstanding.
 
 ---
+
+## 9. Receipt
+
+`operational.receive` is the single door, and runs the checks in this order:
+
+1. the message parses, and its `ROLE` and `TO` are what they should be
+2. a session exists with the sender
+3. the tag verifies under `K_sess`
+4. the timestamp lies within Δt_max
+5. a command-bearing message quotes the outstanding challenge
+6. the `ROLE` lies within the sender's `PERMITTED_ROLES`; at a station, the
+   station's own `SECTOR` covers the airspace reported
+7. the session's state admits the role
+
+Steps 1 and 2 precede the paper's "verifies the tag" because a receiver
+cannot verify a tag before parsing the message and finding the key.
+
+---
+
+## 10. Identity on disk
+
+```
+config/trust_anchors.json          { "issuers": { "BE CAA": "<base64url>" } }
+~/AviationLocalKeys/<ACTOR>/
+    ed25519_private.key            signing key
+    x25519_private.key             long-term kex secret, eq. (1)
+    credential                     the signed record
+```
+
+`scripts/provision.py` creates the authority if there is none, issues
+credentials, and then **verifies what it issued against the anchor it just
+wrote**. If those two drift apart every message in the demo is refused at
+`issuer_signature`, which is the correct answer to the wrong question and
+takes a while to recognise.
+
+Existing key files are reused, so material generated by the legacy tooling is
+picked up unchanged and only the credential is new.
+
+---
+
+## 11. The MQTT binding
+
+```
+aviation/<role>/<addressee>        aviation/cc_clearance/OOABC
+aviation/+/<name>                  what a node subscribes to
+```
+
+The exposed role carries **no authority**. `check_topic` compares it against
+the authenticated `ROLE` and refuses any disagreement. An adversary may
+publish anything to any topic; only the `ROLE` inside the tagged region
+decides what a message is.
+
+Two things to know about `mqtt_client.py`:
+
+- handlers receive paho's own `(client, userdata, msg)`, not `(topic, payload)`;
+- **subscribe from `on_connect`**. A subscribe issued before the CONNACK is
+  dropped rather than queued, and the node then sits there having heard
+  nothing.
+
+---
+
+## 12. Testing
+
+```bash
+python -m unittest discover -s tests -t . -v      # 148 tests, ~1 s
+python -m unittest tests.test_node -v             # one file
+python scripts/replay.py scenarios/commercial_flight_EBBR-EDDF.json
+```
+
+`replay.py` runs a whole flight with no broker, which is the quickest way to
+see that a change has not broken the protocol, and prints the message counts.
+
+### Writing a test
+
+Assert the step, not just the refusal:
+
+```python
+with self.assertRaises(Rejected) as cm:
+    station.handle(tampered, now)
+self.assertEqual(cm.exception.step, Step.TAG)
+```
+
+And where the order of two checks matters, test it: construct a message that
+fails both and assert the earlier one is reported.
+
+---
+
+## 13. Extending
+
+### A new message role
+
+1. Add the constant to `operational.py` and to `_KNOWN_ROLES`.
+2. Decide whether it is command-bearing. If an aircraft acts on it, add it to
+   `session.COMMAND_ROLES`, which gates it on a challenge and refuses it
+   during handover.
+3. Add it to the relevant role list in `scripts/provision.py` and reprovision.
+4. Add a builder beside `build_sa` / `build_command`.
+5. Add a test for a message of that role being refused for each reason it can
+   be refused.
+
+### A new station
+
+Add the name and its sector to `STATIONS` in `scripts/provision.py` and to
+`STATIONS` in `visualisation/launch_all_stations.sh`, then reprovision.
+
+### A new transport binding
+
+Write the equivalent of `mqtt_binding.py`. It needs to frame and address
+messages, and to compare whatever role it exposes against the authenticated
+`ROLE`. Nothing below `node.py` changes, which is the point of the
+abstract-transport design.
+
+### Changing a protocol constant
+
+Constants that correspond to the paper live in one place each:
+`primitives.CHALLENGE_BYTES`, `encoding.LINE_TERMINATOR`,
+`handshake.DEFAULT_WINDOW`, `session.DEFAULT_HANDOVER_TIMEOUT`. Change the
+code and the paper together; where a test pins the current behaviour, it is
+pinned so that changing it forces the paper to change too.

@@ -1,443 +1,369 @@
 # Module Dependencies – Secure Aviation Messaging Prototype
 
-This document describes module-level dependencies, import relationships, responsibilities, and interaction patterns across the entire codebase.
+Module-level dependencies, import relationships and responsibilities. It
+complements `DEVELOPER GUIDE.md`, which explains the protocol, and
+`CODE_INDEX.md`, which lists the files.
+
+> **Scope**
+>
+> * Modules present in the repository, conforming and legacy
+> * Imports, call-chains and shared resources
+> * Not: third-party internals
 
 ---
 
-## 1. High-Level Dependency Graph
+# 1. High-Level Dependency Graph
+
+## 1.1 Conforming implementation
 
 ```
-scripts/scenario_player.py
-   ├── core/messages.py
-   ├── core/comm_state.py
-   ├── core/registry.py
-   ├── core/logger.py
-   ├── encryption/crypto.py
-   ├── mqtt_client.py
-   ├── utils/station_norm.py
-   └── settings.py
+scripts/aircraft.py
+   ├── protocol.identity          (load_identity, load_trust_anchors)
+   ├── protocol.node              (Aircraft, Outbound)
+   ├── protocol.mqtt_binding      (topic_for, subscription_for, check_topic)
+   ├── protocol.operational       (build_aircraft_cc, roles)
+   ├── protocol.session           (State)
+   ├── protocol.rejection         (Rejected)
+   ├── scripts._scenario          (load_aircraft_script)
+   ├── scripts._display           (banner)
+   ├── mqtt_client, settings
+   └── logs/pids/<name>.pid       (written on start, removed at exit)
 
-scripts/demo_subscriber.py
-   ├── core/messages.py
-   ├── core/comm_state.py
-   ├── core/registry.py
-   ├── core/logger.py
-   ├── encryption/crypto.py
-   ├── mqtt_client.py
-   ├── utils/station_norm.py
-   ├── config/station_keys.py
-   └── settings.py
+scripts/station.py
+   ├── protocol.identity, protocol.credentials
+   ├── protocol.node              (Station)
+   ├── protocol.mqtt_binding
+   ├── protocol.rejection
+   ├── scripts._scenario          (load_station_script)
+   ├── scripts._display
+   ├── mqtt_client, settings
+   └── logs/pids/<name>.pid
 
-scripts/mqtt_recorder.py
-   ├── mqtt_client.py
-   └── settings.py
+scripts/provision.py
+   ├── protocol.identity          (ensure_keys, issue_for, add_trust_anchor)
+   ├── protocol.credentials       (parse, verify)
+   ├── protocol.primitives        (public_signing_key, b64u)
+   ├── config/trust_anchors.json  (written)
+   └── ~/AviationLocalKeys/       (written)
 
-scripts/add_actor.py
-   ├── cryptography (Ed25519PrivateKey, X25519PrivateKey)
-   ├── encryption/crypto.py
-   └── config/publicKeys.json (writes)
+scripts/replay.py
+   ├── protocol.identity, protocol.credentials
+   ├── protocol.node, protocol.operational, protocol.session
+   ├── protocol.mqtt_binding      (topic_for, check_topic — no sockets)
+   └── scripts._scenario
+```
 
-scripts/add_aircraft.py
-   ├── utils/regnorm.py
-   └── config/aircraft_db.json (writes)
+## 1.2 Inside `protocol/`
 
-scripts/build_scenario_from_tables.py
-   ├── utils/station_norm.py
-   ├── utils/regnorm.py
-   └── CSV input tables
+```
+node.py
+   ├── handshake.py
+   ├── operational.py
+   ├── session.py
+   ├── identity.py            (type only)
+   ├── encoding.py
+   └── rejection.py
 
-core/registry.py
-   ├── encryption/crypto.py
-   ├── config/publicKeys.json (reads)
-   └── ~/AviationLocalKeys/ (reads private keys)
+operational.py
+   ├── session.py
+   ├── credentials.py         (_iso, _parse_iso, default_sector_covers)
+   ├── handshake.py           (DEFAULT_WINDOW, MAC)
+   ├── encoding.py
+   ├── primitives.py
+   └── rejection.py
 
-encryption/crypto.py
-   ├── settings (lazy import inside compute_mac())
-   └── encryption/ascon.py (lazy import — ASCON-MAC only)
+handshake.py
+   ├── credentials.py
+   ├── encoding.py
+   ├── primitives.py
+   └── rejection.py
+
+session.py
+   ├── credentials.py         (type only)
+   ├── primitives.py
+   └── rejection.py
+
+credentials.py
+   ├── encoding.py
+   ├── primitives.py
+   └── rejection.py
+
+identity.py
+   ├── credentials.py
+   └── primitives.py
+
+mqtt_binding.py
+   ├── encoding.py
+   └── rejection.py
+
+primitives.py
+   ├── encryption.ascon
+   └── cryptography (Ed25519, X25519)
+
+encoding.py                   no protocol dependencies
+rejection.py                  no dependencies at all
+```
+
+The graph is acyclic and the direction never reverses: `encoding.py` and
+`rejection.py` are the floor, `node.py` is the ceiling. A change that would
+make a lower module import a higher one is a design error, not a convenience.
+
+## 1.3 Legacy implementation
+
+```
+scripts/scenario_player.py        scripts/demo_subscriber.py
+   ├── core.messages                 ├── core.messages
+   ├── core.comm_state               ├── core.comm_state
+   ├── core.registry                 ├── core.registry
+   ├── encryption.crypto             ├── encryption.crypto
+   ├── utils.station_norm            ├── config.station_keys
+   ├── utils.regnorm                 ├── core.logger
+   ├── core.logger                   └── mqtt_client
+   └── mqtt_client
 ```
 
 ---
 
-## 2. Module-by-Module Dependencies
+# 2. Module-by-Module
+
+## 2.1 `protocol/encoding.py`
+
+**Provides** `encode`, `parse`, `authenticated_region`, `get`, `require`,
+`EncodingError`, `LINE_TERMINATOR`.
+
+**Depends on** the standard library only.
+
+**Used by** `credentials`, `handshake`, `operational`, `node`,
+`mqtt_binding`, and the scripts.
+
+**Notes** `authenticated_region` slices the buffer as received and never
+re-encodes. Everything that verifies a signature or a tag goes through it; if
+a new call site re-encodes instead, the two sides can disagree about what was
+authenticated without either being obviously wrong.
+
+## 2.2 `protocol/rejection.py`
+
+**Provides** `Step`, `Rejected`.
+
+**Depends on** nothing.
+
+**Used by** every module in `protocol/` and both scripts.
+
+**Notes** One vocabulary for the whole package. `credentials.CredentialRejected`
+is an alias kept for readers of §3.3.2.
+
+## 2.3 `protocol/primitives.py`
+
+**Provides** the equations: `derive_ephemeral_scalar`, `dh`, `session_key`,
+`transcript_hash`, `derive_challenge`, `new_challenge`, `ack_hash`, `mac`,
+`verify_mac`, `sign`, `verify_signature`, key generation, `b64u`/`unb64u`,
+and the labels and sizes.
+
+**Depends on** `encryption.ascon`, `cryptography`.
+
+**Used by** `credentials`, `handshake`, `session`, `operational`, `identity`,
+and the scripts.
+
+**Notes** The only module that touches cryptography directly. Changing a
+primitive means changing this file and nothing else; that is deliberate, and
+is what the paper means by naming each primitive in one place so a
+post-quantum substitution stays local.
+
+## 2.4 `protocol/credentials.py`
+
+**Provides** `Credential`, `issue`, `parse`, `verify`,
+`default_sector_covers`, and the ISO 8601 helpers `_iso` / `_parse_iso` that
+the rest of the package shares.
+
+**Depends on** `encoding`, `primitives`, `rejection`.
+
+**Used by** `handshake`, `operational`, `session` (type only), `identity`,
+`station.py`, `provision.py`, `replay.py`.
+
+**Notes** `verify` runs the specified order and raises with the step that
+failed. The order is tested, including that a message failing two checks
+reports the earlier one.
+
+## 2.5 `protocol/handshake.py`
+
+**Provides** `Initiator`, `Responder`, `Session`, `Endpoint`, the three role
+constants, `SIGNATURE`, `MAC`, `DEFAULT_WINDOW`.
+
+**Depends on** `credentials`, `encoding`, `primitives`, `rejection`.
+
+**Used by** `node`, `operational` (for `DEFAULT_WINDOW` and `MAC`), tests.
+
+**Notes** Holds one handshake in flight, not session state. What the
+endpoints retain afterwards belongs to `session.py`.
+
+## 2.6 `protocol/session.py`
+
+**Provides** `State`, `Session`, `SessionTable`, `COMMAND_ROLES`, the three
+timeouts, and the challenge functions `arm`, `may_act`, `record_execution`,
+`station_should_resend`, `overdue`.
+
+**Depends on** `credentials` (type only), `primitives`, `rejection`.
+
+**Used by** `operational`, `node`, `aircraft.py`, `replay.py`, tests.
+
+**Notes** Both the state machine and the challenge bookkeeping live here
+because both are per-session state. `SessionTable.establish` drops any row in
+`HANDOVER`, which is how the old session ends when a successor comes up.
+
+## 2.7 `protocol/operational.py`
+
+**Provides** the role constants, `ALT_REFS`, `TRANSFER_INCOMPLETE`,
+`Received`, the builders `build_sa` / `build_command` / `build_aircraft_cc` /
+`build_ack`, `receive`, `last_exec_of`.
+
+**Depends on** `session`, `credentials`, `handshake`, `encoding`,
+`primitives`, `rejection`.
+
+**Used by** `node`, `aircraft.py`, `replay.py`, tests.
+
+**Notes** `receive` is the only door for operational traffic. A second
+entry point that skipped one of its checks is the most likely way to break
+the implementation's central claim, so new paths call it rather than
+reimplementing it.
+
+## 2.8 `protocol/node.py`
+
+**Provides** `Aircraft`, `Station`, `Outbound`.
+
+**Depends on** `handshake`, `operational`, `session`, `identity` (type only),
+`encoding`, `primitives`, `rejection`.
+
+**Used by** `aircraft.py`, `station.py`, `replay.py`, `tests/test_node.py`.
+
+**Notes** The top of the protocol stack and the bottom of the applications.
+It imports no transport, which is what allows `test_node.py` to drive whole
+flights in process.
+
+## 2.9 `protocol/identity.py`
+
+**Provides** `Identity`, `load_identity`, `issue_for`, `ensure_keys`,
+`store_credential`, `load_trust_anchors`, `add_trust_anchor`, `norm`, and the
+paths `ANCHORS_PATH` and `LOCAL_DIR`.
+
+**Depends on** `credentials`, `primitives`.
+
+**Used by** `aircraft.py`, `station.py`, `provision.py`, `replay.py`.
+
+**Notes** The only module that touches the filesystem. It replaces
+`core/registry.py`: a receiver holds issuer keys, not a directory of
+principals. Private key file names match the legacy ones, so existing
+material is reused.
+
+## 2.10 `protocol/mqtt_binding.py`
+
+**Provides** `slug`, `role_slug`, `topic_for`, `subscription_for`,
+`check_topic`, `DEFAULT_BASE`.
+
+**Depends on** `encoding`, `rejection`.
+
+**Used by** `aircraft.py`, `station.py`, `replay.py`.
+
+**Notes** The whole binding. `check_topic` is the only thing that gives the
+topic any standing, and it gives it none: it compares the advertised role
+against the authenticated one and refuses a disagreement.
 
 ---
 
-### 2.1 `encryption/crypto.py`
+# 3. Shared and legacy modules
 
-#### Provides
+## 3.1 `encryption/ascon.py`
 
-* Ed25519 signing (`sign_detached_b64u`) & verification (`ed25519_verify`)
-* X25519 key wrapping/unwrapping (`wrap_session_key`, `unwrap_session_key`) via ChaCha20-Poly1305 AEAD
-* BLAKE3 keyed MAC + algorithm-agnostic `compute_mac()` / `compute_mac_b64u()`
-* XOR-obfuscated MAC verification (`dec_hash()`)
-* URL-safe Base64 helpers (`b64u_to_bytes`, `bytes_to_b64u`)
-* Session primitives (`random_session_key`, `random_session_id_b64u`)
+**Provides** `ascon_hash`, `ascon_mac`, `ascon_encrypt`, `ascon_decrypt`.
 
-#### Depends on
+**Used by** `protocol/primitives.py` and `encryption/crypto.py`.
 
-* `base64`, `secrets` (stdlib)
-* `blake3`
-* `cryptography` (Ed25519, X25519, ChaCha20-Poly1305)
-* `encryption.ascon` (lazy import — only when `settings.MAC_ALG == "ASCON-MAC"`)
-* `settings` (lazy import inside `compute_mac()`)
+**Notes** A reference implementation of NIST SP 800-232, vendored. Not
+modified by this project.
 
-#### Used by
+## 3.2 `encryption/crypto.py` — legacy
 
-* `scripts/scenario_player.py` (sign/wrap/MAC)
-* `scripts/demo_subscriber.py` (verify/unwrap/MAC)
-* `core/registry.py` (Base64 helpers)
-* `scripts/add_actor.py` (Base64 helpers)
-* `config/station_keys.py` (Base64 helpers)
+**Provides** Base64 helpers, `compute_mac` (Ascon-Mac), `verify_mac`,
+Ed25519 sign/verify, X25519 session-key wrap/unwrap.
 
-#### Notes
+**Used by** `core/registry.py`, `config/station_keys.py`, and the legacy
+scripts.
 
-Core security module. Switching MAC algorithm requires only changing `settings.MAC_ALG`.
+**Notes** BLAKE3, the `MAC_ALG` dispatch and the XOR-keystream `dec_hash`
+have been removed. The conforming implementation does not import this module
+at all.
 
----
+## 3.3 `core/messages.py`, `core/comm_state.py`, `core/registry.py` — legacy
 
-### 2.2 `encryption/ascon.py`
+Superseded by `protocol/encoding.py`, `protocol/session.py` and
+`protocol/identity.py` respectively. Still used by the legacy scripts. Field
+names on the wire were corrected to `MAC` and `SIGNATURE`.
 
-#### Provides
+## 3.4 `core/logger.py`
 
-* Vendored ASCON-MAC, ASCON hash, ASCON-AEAD128.
+**Provides** the structured logger (`WIRE`, `LIMITED`, `FULL`; `TXT`, `JSON`,
+`BOTH`).
 
-#### Depends on
+**Used by** the legacy scripts. The conforming scripts print to stdout and are
+captured by `tee` into `logs/<STATION>.log`.
 
-* Nothing (pure Python).
+## 3.5 `mqtt_client.py`
 
-#### Used by
+**Provides** `MQTTClient`: `connect`, `subscribe`, `publish`, `loop_start`,
+`loop_stop`, `set_handlers`, `is_connected`.
 
-* `encryption/crypto.py` (lazy import via `from encryption.ascon import ascon_mac`).
+**Depends on** `paho.mqtt` (v2 callback API, MQTTv3.1.1).
 
-#### Notes
+**Used by** every script that touches the broker.
 
-Never modify. Only `ascon_mac` is used by this project.
+**Notes** Two sharp edges, both documented in the developer guide: handlers
+receive paho's own `(client, userdata, msg)`, and a `subscribe` issued before
+the CONNACK is dropped rather than queued, so subscriptions belong in
+`on_connect`.
 
----
+## 3.6 `settings.py`
 
-### 2.3 `core/messages.py`
+**Provides** broker host and port, topic base, logging configuration.
 
-#### Provides
+**Notes** `MAC_ALG` is informational. The data-plane MAC is Ascon-Mac and is
+no longer selectable: a protocol that names its primitives in one place has
+nothing to dispatch on.
 
-* ASCII payload builders: `ascii_key()`, `ascii_sa()`, `ascii_cc()`, `ascii_ack()`
-* KEY wire-format signing helpers: `build_key_core()`, `key_signing_material()`
-* Wire parser: `parse_ascii_block()`
-* Serialisation helpers: `serialize()`, `deserialize()`
-* Utilities: `utc_now_iso()`, `new_id()`
+## 3.7 `scripts/_scenario.py`
 
-#### Depends on
+**Provides** `load_aircraft_script`, `load_station_script`,
+`stations_in_order`, `aircraft_id`, `canonical`.
 
-* `json`, `time`, `uuid` (stdlib only)
+**Depends on** the standard library only.
 
-#### Used by
+**Used by** `aircraft.py`, `station.py`, `replay.py`.
 
-* `scripts/scenario_player.py`
-* `scripts/demo_subscriber.py`
-* `scripts/build_scenario_from_tables.py`
+**Notes** Translates scenario files written for the earlier design. KEY and
+ACK rows are dropped because the protocol produces both; CONTACT rows become
+nominations issued by whichever station held the aircraft at that moment.
 
-#### Notes
+## 3.8 `scripts/_display.py`
 
-Contains the canonical definition of every message type's on-wire ASCII format and the KEY signing invariant:
+**Provides** `render`, `banner`.
 
-```
-ascii_key(core) = build_key_core(…) + "\nKEY SIG: " + sig
-```
+**Used by** `aircraft.py`, `station.py` under `--verbose`.
 
-Sender signs `build_key_core(…).encode("utf-8")`; receiver calls `key_signing_material(raw_payload)` to extract the identical bytes without reconstruction.
+**Notes** Elides over-long Base64 for display only.
 
 ---
 
-### 2.4 `core/comm_state.py`
+# 4. Shared resources
 
-#### Provides
-
-* `SessionEntry` dataclass — `(session_id: str, key: bytes)`
-* `SessionBook` — generic per-key session store (`get`, `put`, `drop`)
-* `AircraftSessionBook` — aircraft-side store with current-station tracking and handover deduplication
-
-#### Depends on
-
-* `utils.station_norm.normalise_station` (deferred import)
-
-#### Used by
-
-* `scripts/demo_subscriber.py` — ground stations use `SessionBook` keyed by aircraft ID
-* `scripts/scenario_player.py` — aircraft uses `AircraftSessionBook` keyed by station ID
-
----
-
-### 2.5 `core/registry.py`
-
-#### Provides
-
-* `get_pubkeys(actor_id)` → `(ed25519_pub: bytes, x25519_pub: bytes)`
-* `load_private_keys(actor_id)` → `(ed25519_priv: bytes, x25519_priv: bytes)`
-
-#### Depends on
-
-* `encryption.crypto` (b64u helpers)
-* `config/publicKeys.json` (reads)
-* `~/AviationLocalKeys/<ID>/` (reads private keys)
-
-#### Used by
-
-* `scripts/demo_subscriber.py`
-* `scripts/scenario_player.py`
-
----
-
-### 2.6 `core/logger.py`
-
-#### Provides
-
-* `get_logger(component, log_dir)` → `Logger`
-* `Logger.wire(msg, data)` — always written
-* `Logger.event(msg, data)` — written at `LOG_LEVEL >= LIMITED`
-* `Logger.debug(msg, data)` — written at `LOG_LEVEL == FULL`
-* `Logger.close()`
-
-#### Depends on
-
-* `settings` (`LOG_LEVEL`, `LOG_FORMAT`, `LOG_BACKUP`)
-* `json`, `time`, `pathlib` (stdlib)
-
-#### Used by
-
-* `scripts/demo_subscriber.py`
-* `scripts/scenario_player.py`
-
-#### Notes
-
-Writes to `logs/<component>.txt` and/or `logs/<component>.jsonl`. Console output (print) is separate and continues unchanged.
-
----
-
-### 2.7 `mqtt_client.py`
-
-#### Provides
-
-* Thin abstraction over Paho MQTT (VERSION2 callback API)
-* `connect`, `publish`, `subscribe`, `loop_start`, `loop_stop`, `disconnect`
-
-#### Depends on
-
-* `paho.mqtt.client`
-
-#### Used by
-
-* `scripts/scenario_player.py`
-* `scripts/demo_subscriber.py`
-* `scripts/mqtt_recorder.py`
-
----
-
-### 2.8 `config/station_keys.py`
-
-#### Provides
-
-* `get_priv_for_station(station_id)` → `(ed25519_priv: bytes, x25519_priv: bytes)`
-* Multiple fallback search paths (env var, `~/AviationLocalKeys`, project dir, legacy formats)
-
-#### Depends on
-
-* `encryption.crypto` (`b64u_to_bytes`)
-* `utils.station_norm`
-* Filesystem
-
-#### Used by
-
-* `scripts/demo_subscriber.py` (mandatory on startup)
-
-#### Notes
-
-If keys are missing, the listener refuses to start with a full diagnostic.
-
----
-
-### 2.9 `config/publicKeys.json`
-
-Public Ed25519 + X25519 keys for all actors. Written by `scripts/add_actor.py`, read by `core/registry.py`.
-
----
-
-### 2.10 `utils/station_norm.py`
-
-#### Provides
-
-* `normalise_station(name)` — canonical internal name (e.g. `"EBBR GND"` → `"EBBR_GND"`)
-* `pretty_station(name)` — display-only label. Never use for addressing.
-
-#### Used by
-
-* `scripts/demo_subscriber.py`
-* `scripts/scenario_player.py`
-* `core/comm_state.py` (deferred)
-* `scripts/build_scenario_from_tables.py`
-* `config/station_keys.py`
-
----
-
-### 2.11 `utils/regnorm.py`
-
-#### Provides
-
-* `normalise_reg(reg)` — `"OO-ABC"` → `"OOABC"`
-
-#### Used by
-
-* `scripts/scenario_player.py`
-* `scripts/add_aircraft.py`
-* `scripts/build_scenario_from_tables.py`
-
----
-
-### 2.12 `utils/registry.py`
-
-#### Provides
-
-* LRU-cached `load_airports_db()`, `load_aircraft_db()`
-
-#### Used by
-
-* `utils/station_norm.py`
-
----
-
-### 2.13 `scripts/demo_subscriber.py`
-
-#### Depends on
-
-* `mqtt_client`
-* `core.registry`
-* `encryption.crypto`
-* `core.comm_state`
-* `core.messages`
-* `core.logger`
-* `utils.station_norm`
-* `config.station_keys`
-* `settings`
-
-#### Provides
-
-* Secure message receiver for each ATSU
-* KEY/SA/CC parsing and signature/MAC verification
-* Address filtering (`--only-for-us`)
-* Structured log output via `core.logger`
-
----
-
-### 2.14 `scripts/scenario_player.py`
-
-#### Depends on
-
-* `mqtt_client`
-* `core.registry`
-* `encryption.crypto`
-* `core.comm_state`
-* `core.messages`
-* `core.logger`
-* `utils.station_norm`
-* `settings`
-
-#### Provides
-
-* Aircraft simulator: KEY/SA/CC message production with wall-clock scheduling
-* CONTACT-driven session handover
-* Gaussian CC jitter injection
-
----
-
-### 2.15 `scripts/mqtt_recorder.py`
-
-#### Depends on
-
-* `mqtt_client`
-* `settings`
-
-#### Provides
-
-* Passive capture of all MQTT traffic. No cryptography.
-
----
-
-### 2.16 `scripts/add_actor.py`
-
-#### Depends on
-
-* `cryptography` (Ed25519PrivateKey, X25519PrivateKey, serialization)
-* `encryption.crypto` (`bytes_to_b64u`)
-* `config/publicKeys.json` (reads and writes)
-* Filesystem (`~/AviationLocalKeys/<ID>/`)
-
-#### Provides
-
-* Generation of new actor identity (Ed25519 + X25519 keypairs)
-* Private key storage (chmod 600)
-* Public key registry update (with `.bak` backup)
-
----
-
-### 2.17 `scripts/build_scenario_from_tables.py`
-
-#### Depends on
-
-* `utils.station_norm`
-* `utils.regnorm`
-* CSV files
-
-#### Provides
-
-* Conversion from SA/CC CSV tables → scenario JSON for `scenario_player.py`
-
----
-
-## 3. Runtime Interaction Summary
-
-| Component | Receives From | Sends To | Notes |
-|---|---|---|---|
-| `scenario_player.py` | scenario JSON | MQTT broker | Signs & publishes KEY/SA/CC; writes to logger |
-| `demo_subscriber.py` | MQTT broker | stdout + logger files | Verifies, parses, filters; publishes ACKs |
-| `mqtt_recorder.py` | MQTT broker | log files | Passive recorder — no crypto |
-| `add_actor.py` | user | FS + publicKeys | Generates keypairs |
-| `build_scenario_from_tables.py` | CSV files | scenario JSON | Preprocessing tool |
-
----
-
-## 4. Cryptographic Data Dependencies
-
-| Operation | Requires | Provided By |
+| Resource | Written by | Read by |
 |---|---|---|
-| Sign KEY | aircraft private Ed25519 key | `scenario_player` + `encryption.crypto` |
-| Verify KEY sig | sender Ed25519 pubkey + raw wire bytes | `publicKeys.json` + `core.registry` + `core.messages.key_signing_material()` |
-| Wrap session key | recipient X25519 pubkey | `encryption.crypto.wrap_session_key()` |
-| Unwrap KEY | station private X25519 key | `demo_subscriber` + `encryption.crypto` |
-| MAC SA/CC | session key (32 bytes) | `encryption.crypto.compute_mac_b64u()` |
-| MAC algorithm | `settings.MAC_ALG` | `encryption.crypto.compute_mac()` |
+| `config/trust_anchors.json` | `provision.py` | every conforming node |
+| `~/AviationLocalKeys/<ACTOR>/` | `provision.py`, `add_actor.py` | `identity.load_identity`, `core/registry.py` |
+| `config/publicKeys.json` | `add_actor.py` | legacy scripts only |
+| `logs/pids/*.pid` | `aircraft.py`, `station.py` | `stop_all_listeners.sh` |
+| `logs/pids/mqtt_recorder.pid` | `run_demo.sh` | `stop_demo.sh` |
+| `logs/<STATION>.log` | `tee` in the launchers | people |
+| `logs/scenario_log.json` | `mqtt_recorder.py` | `visualise_flight.py` |
+| `scenarios/*.json` | `build_scenario_from_tables.py` | `_scenario.py`, legacy player |
 
----
-
-## 5. Topic Dependencies
-
-```
-aviation/sec/key/<aircraft>     scenario_player publishes, demo_subscriber subscribes
-aviation/pos/sa/<aircraft>      scenario_player publishes, demo_subscriber subscribes
-aviation/cc/<type>/<aircraft>   scenario_player publishes, demo_subscriber subscribes
-aviation/sec/ack/<station>      demo_subscriber publishes (not subscribed by scenario_player)
-#                               mqtt_recorder subscribes (all traffic)
-```
-
----
-
-## 6. File-Level Dependency Summary
-
-| File | Reads | Writes | Uses |
-|---|---|---|---|
-| `scripts/demo_subscriber.py` | private keys, publicKeys.json | `logs/<station>.{txt,jsonl}` | mqtt, core, encryption, settings |
-| `scripts/scenario_player.py` | publicKeys.json, scenario JSON | `logs/<aircraft>.{txt,jsonl}` | mqtt, core, encryption, settings |
-| `scripts/mqtt_recorder.py` | — | `scenario_log.json` | mqtt, settings |
-| `core/registry.py` | publicKeys.json, private keys | — | encryption.crypto |
-| `scripts/add_actor.py` | publicKeys.json | publicKeys.json + private keys | cryptography lib, encryption.crypto |
-| `scripts/add_aircraft.py` | aircraft_db | aircraft_db | utils.regnorm |
-| `scripts/build_scenario_from_tables.py` | CSV | scenario JSON | utils.station_norm, utils.regnorm |
-
----
+The PID files are the contract between the launchers and the stop script.
+They exist because killing by command-line pattern is unsafe: a shell whose
+command line mentions the script matches it too.

@@ -1,319 +1,320 @@
 # Secure Aviation Messaging Prototype – User Guide
 
+Running the demo and reading what it shows you. For the code, see
+`CODE_INDEX.md`, `DEVELOPER GUIDE.md` and `MODULE DEPENDENCIES.md`.
+
+---
+
 ## 1. Introduction
 
-This User Guide explains how to **install, run, and operate** the Secure Aviation Messaging Prototype. It covers:
+The demo flies a recorded flight across a sequence of air traffic control
+stations, each in its own Terminal window, over an MQTT broker that is
+treated as untrusted. Every message is authenticated; every message that
+fails a check is discarded with the name of the check that refused it.
 
-* Setting up the environment
-* Starting ground-station listeners
-* Playing simulation scenarios
-* Reading and understanding logs
-* Adding new actors, stations, and scenarios
-
-For technical internals refer to the *Developer Guide*.
+What you are watching is the protocol of Section 3.3 of the IJCIP paper: a
+three-message handshake, credentials carried in the messages themselves, a
+challenge exchange binding each command to the report it answers, and a
+transfer of control that needs no channel between ground stations.
 
 ---
 
 ## 2. System Overview
 
-The system simulates secure air–ground messaging using:
-
-* **MQTT** as transport (Mosquitto broker)
-* **`scripts/scenario_player.py`** — aircraft behaviour generator
-* **`scripts/demo_subscriber.py`** — receiver for each ATS unit (one per station)
-* **`scripts/mqtt_recorder.py`** — full-message logger
-
-Message types:
-
-* **KEY** → Establishes a secure cryptographic session (Ed25519 + X25519)
-* **SA** → Situational Awareness position reports (BLAKE3/ASCON-MAC authenticated)
-* **CC** → Control Commands: clearances, requests, instructions, handovers
+| Piece | What it is |
+|---|---|
+| Aircraft | `scripts/aircraft.py`, one process, flies the scenario |
+| Stations | `scripts/station.py`, one process and one window per station |
+| Broker | Mosquitto on `127.0.0.1:1883`, untrusted, relays only |
+| Credentials | issued by `scripts/provision.py` before the demo starts |
+| Recorder | `scripts/mqtt_recorder.py`, optional, captures all traffic |
 
 ---
 
 ## 3. Installation
 
-### 3.1 Clone the Repository
+### 3.1 Virtual environment
 
-```
-git clone <repo-url>
-cd <repo-directory>
-```
-
-### 3.2 Create a Virtual Environment and Install
-
-```
+```bash
+cd ~/Documents/Claude/Projects/PhD/Software
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
 pip install -e .
+pip install paho-mqtt cryptography
 ```
 
-The `pip install -e .` step is required once. It registers the project packages so all scripts can import them without manual path configuration.
+### 3.2 MQTT broker
 
-### 3.3 Install MQTT Broker (macOS)
-
+```bash
+docker compose up -d          # eclipse-mosquitto:2, port 1883
 ```
+
+or with Homebrew:
+
+```bash
 brew install mosquitto
 brew services start mosquitto
 ```
 
-Default broker settings (from `settings.py`):
+`run_demo.sh` does **not** start the broker. Check it is listening:
 
-* Host: `127.0.0.1`
-* Port: `1883`
-
----
-
-## 4. Key Setup
-
-The system uses end-to-end cryptography. Every actor needs a keypair.
-
-### 4.1 Public Keys
-
-Located in `config/publicKeys.json`. Generated and updated by `add_actor.py`.
-
-### 4.2 Private Keys
-
-Each station must have its own private keys stored locally:
-
-```
-~/AviationLocalKeys/<STATION>/ed25519_private.key
-~/AviationLocalKeys/<STATION>/x25519_private.key
-```
-
-Format: URL-safe Base64, 32 bytes decoded, no newlines.
-
-Generate keypairs with:
-
-```
-python3 scripts/add_actor.py add EBBR_GND tower
-python3 scripts/add_actor.py add OOABC aircraft
-```
-
-If private keys are missing, the listener refuses to start.
-
----
-
-## 5. Starting All Listeners
-
-Use the launcher script:
-
-```
-./visualisation/launch_all_listeners.sh
-```
-
-This opens one macOS Terminal window per station and starts `demo_subscriber.py --only-for-us` for each. Output is captured to `logs/<STATION>.log` via `tee`.
-
-### 5.1 Stopping All Listeners
-
-```
-./visualisation/stop_all_listeners.sh
-```
-
-Kills all `demo_subscriber.py` processes and closes their Terminal windows.
-
-### 5.2 Tiling Windows
-
-```
-./visualisation/tile_listeners.sh
-```
-
-Arranges all listener windows for a side-by-side overview.
-
----
-
-## 6. Running a Full Demo
-
-The quickest way to run everything at once:
-
-```
-./run_demo.sh --record --scenario scenarios/commercial_flight_EBBR-EDDF.json
-```
-
-This launches listeners, starts the recorder, and plays the scenario.
-
-For individual control:
-
-### 6.1 Start the Global Message Recorder (optional)
-
-```
-python3 scripts/mqtt_recorder.py \
-  --host 127.0.0.1 --port 1883 \
-  --topic '#' \
-  --view ascii \
-  --out-array logs/scenario_log.json
-```
-
-### 6.2 Run a Scenario
-
-```
-python3 scripts/scenario_player.py --publish \
-  scenarios/commercial_flight_EBBR-EDDF.json
-```
-
-Add `--debug` for verbose scheduling output.
-
-The aircraft (OOABC):
-
-* Sends periodic **SA** position reports
-* Exchanges **KEY** messages when switching ATC units
-* Sends **CC** messages based on the scenario timeline
-
-**Note:** Time is divided by 1000 internally so the demo runs fast. Remove the `/1000` in `scenario_player.py → sleep_until()` for real-time operation.
-
----
-
-## 7. Understanding Message Types
-
-### 7.1 KEY Messages
-
-Establish a secure session. Transmitted once per station handover. Contain:
-
-* Timestamp, From, To
-* Aircraft Ed25519 public key
-* Session ID
-* Wrapped session key (X25519 + ChaCha20-Poly1305)
-* Ed25519 signature covering everything above the signature line
-
-Subscribers verify the signature and unwrap the session key.
-
-### 7.2 SA (Situational Awareness) Messages
-
-Periodic position reports. Contain:
-
-* Altitude (ft), latitude, longitude
-* Ground speed (kt), heading (degrees)
-* On-ground flag
-* BLAKE3 or ASCON-MAC over all fields
-
-Stations display only on state change or every N messages (configurable via `SA_LOG_EVERY` env var).
-
-### 7.3 CC (Control Commands)
-
-ATC instructions with Gaussian timing jitter (σ = 5s):
-
-* `CONTACT` → triggers a station handover (new KEY exchange)
-* `REQUEST`, `CLEARANCE`, `INSTRUCTION`, `REPORT`, `ACK`
-
-Subscribers queue a MAC-signed ACK reply after a short random delay.
-
----
-
-## 8. Viewing Logs
-
-### 8.1 Terminal-Capture Logs
-
-Captured automatically by the launch scripts via `tee`:
-
-```
-logs/<STATION>.log        all stdout from the listener
-logs/mqtt_recorder.out    all stdout from the recorder
-```
-
-### 8.2 Structured Logger Files
-
-Written by `core/logger.py` for each component:
-
-```
-logs/<component>.txt      human-readable lines: <ts> [LEVEL] [component] msg
-logs/<component>.jsonl    one JSON object per line — for analysis tools
-logs/<component>.prev     previous run's log (if LOG_BACKUP = True in settings.py)
-```
-
-For `scenario_player.py` the component name is the aircraft ID (e.g. `OOABC`).  
-For `demo_subscriber.py` it is the normalised station ID (e.g. `EBBR_GND`).
-
-### 8.3 Global Scenario Log
-
-```
-logs/scenario_log.json
-```
-
-JSON array of all MQTT traffic captured by `mqtt_recorder`. Useful for replay and research analysis.
-
-### 8.4 Adjusting Log Verbosity
-
-Edit `settings.py`:
-
-| Setting | Options | Default | Effect |
-|---|---|---|---|
-| `LOG_LEVEL` | `WIRE` / `LIMITED` / `FULL` | `LIMITED` | What goes into log files |
-| `LOG_FORMAT` | `TXT` / `JSON` / `BOTH` | `BOTH` | Which file formats to write |
-| `LOG_BACKUP` | `True` / `False` | `True` | Keep previous run as `.prev` |
-
-`WIRE` logs only raw wire payloads. `LIMITED` adds session and handover events. `FULL` adds verbose debug output.
-
----
-
-## 9. Adding Your Own Aircraft or Station
-
-### 9.1 Add a New Actor
-
-```
-python3 scripts/add_actor.py add <ACTOR_ID> <type>
-```
-
-Types: `aircraft`, `atc`, `enroute`, `ground`, `test`, `tower`, `uav`.
-
-Use `--overwrite` to replace existing keys.
-
-### 9.2 Add Aircraft Metadata
-
-```
-python3 scripts/add_aircraft.py --icao24 <hex> --registration <reg> --operator <name>
-```
-
-### 9.3 Add a New Station to the Demo
-
-1. Generate keypair: `python3 scripts/add_actor.py add <STATION_ID> tower`
-2. Add the station name to `STATIONS` in `visualisation/launch_all_listeners.sh`
-
-### 9.4 Create a New Scenario
-
-Convert SA and CC CSV tables:
-
-```
-python3 scripts/build_scenario_from_tables.py \
-  --sa path/to/sa.csv --cc path/to/cc.csv \
-  --aircraft OOABC --station EBBR_GND \
-  --out scenarios/my_flight.json
-```
-
-Then run:
-
-```
-python3 scripts/scenario_player.py --publish scenarios/my_flight.json
+```bash
+nc -z 127.0.0.1 1883 && echo "broker up"
 ```
 
 ---
 
-## 10. Troubleshooting
+## 4. Credentials
 
-### "Could not load private keys"
+Everything in the demo depends on credentials, and `run_demo.sh` issues them
+for you. To do it by hand:
 
-Check `~/AviationLocalKeys/<STATION>/ed25519_private.key` and `x25519_private.key` exist and contain valid URL-safe Base64.
+```bash
+python3 scripts/provision.py            # issue, valid 7 days
+python3 scripts/provision.py --days 30  # a longer window
+python3 scripts/provision.py --list     # show what exists
+```
 
-### "no session known; skip"
-
-The ground station has not yet received the KEY message. Enable `--debug` on the subscriber to trace routing.
-
-### "KEY signature INVALID — dropped"
-
-The subscriber rejected the KEY. Run the subscriber with `--debug` to see the raw payload and signing inputs. In debug mode the KEY is accepted anyway so the session continues.
-
-### No messages received
-
-* Verify `mosquitto` is running: `brew services list | grep mosquitto`
-* Confirm the topic base in all components matches (`aviation` by default)
-* Check listener terminal windows for connection errors
-
-### Terminal windows do not close
+What it writes:
 
 ```
-./visualisation/stop_all_listeners.sh
+config/trust_anchors.json          the issuer's public key — the only shared file
+~/AviationLocalKeys/<ACTOR>/
+    ed25519_private.key            signing key
+    x25519_private.key             long-term key-exchange secret
+    credential                     the signed record
+```
+
+Existing keys are reused, so running it again reissues credentials without
+invalidating anything. It finishes by checking that every credential it
+issued verifies against the anchor it just wrote:
+
+```
+every credential verifies against the trust anchor
+```
+
+If that line is missing, stop and fix it before running the demo — see
+Troubleshooting.
+
+---
+
+## 5. Running the demo
+
+```bash
+./run_demo.sh --record --scenario scenarios/commercial_flight_EBBR-EDDF.json --speed 20
+```
+
+This provisions credentials, opens one window per station plus one for the
+aircraft, tiles them, starts the recorder, and flies the scenario at twenty
+times real time.
+
+| Option | Effect |
+|---|---|
+| `--scenario <path>` | which flight |
+| `--speed <factor>` | replay multiplier, default 1.0 |
+| `--verbose` | print every message, field by field, everywhere |
+| `--record` | capture all traffic to `logs/scenario_log.json` |
+| `--no-provision` | do not reissue credentials |
+| `--foreground` | run the aircraft in this shell instead of its own window |
+| `--no-listeners`, `--no-tile` | skip the windows or the tiling |
+| `--legacy` | run the earlier prototype instead |
+
+Scenarios: `commercial_flight_EBBR-EDDF.json` (OOABC, Brussels to Frankfurt,
+seven stations) and `flight_EHAM_EDDM_PHAEX.json` (PHAEX, Amsterdam to
+Munich, six).
+
+### 5.1 Stopping
+
+```bash
+./stop_demo.sh
+```
+
+This ends every process first and then closes the windows, in that order.
+Closing a window whose process is still running is what makes Terminal ask
+"Do you want to terminate running processes in this window?".
+
+To close only the station windows: `./visualisation/stop_all_listeners.sh`.
+
+### 5.2 Without a broker
+
+`scripts/replay.py` flies a whole scenario in one process, with no broker and
+no sockets, and prints the totals:
+
+```bash
+python3 scripts/replay.py scenarios/commercial_flight_EBBR-EDDF.json
+```
+
+```
+--- messages sent ---
+  SA                 281
+  ACK                 38
+  CC:INSTRUCTION      26
+  ...
+  total              396   124.1 KiB, 320 B/message average
 ```
 
 ---
 
-*End of User Guide*
+## 6. Reading the output
+
+Ordinary mode prints one line per message:
+
+```
+  <- SA             accepted
+  -> CC:CLEARANCE   OOABC
+```
+
+`--verbose` prints the message itself:
+
+```
+  <- SA             accepted   [aviation/sa/EBBR_GND]   327 B
+    ROLE: SA
+    TIMESTAMP: 2026-10-23T05:44:16+00:00
+    FROM: OOABC
+    TO: EBBR GND
+    ALTITUDE: 165
+    ALT_REF: BARO_QNH
+    POSITION: 50.901981 LAT 4.482942 LONG
+    SPEED: 0
+    HEADING: 334
+    ON_GROUND: 1
+    LAST_EXEC: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+    CHALLENGE: cQNrat6ILCJf1W1qSTrFYZcsdar7RgN8rRDsbb--Ncw
+    MAC: oxmXF3N6ZvlKer4vopHXRA
+
+  -> CC:CLEARANCE   OOABC   [aviation/cc_clearance/OOABC]   203 B
+    INSTRUCTION: STARTUP APPROVED
+    IN_REPLY_TO: cQNrat6ILCJf1W1qSTrFYZcsdar7RgN8rRDsbb--Ncw
+    MAC: hINpaXq8iCtOIK4A2m38dw
+```
+
+The clearance quotes the report's `CHALLENGE` in its `IN_REPLY_TO`. That is
+the exchange: the aircraft acts on the command only because it answers the
+challenge the aircraft itself issued.
+
+Credentials and signatures are shortened for display, with their length
+shown. Nothing in the protocol sees the shortened form.
+
+### 6.1 Message types
+
+| Role | Direction | Carries |
+|---|---|---|
+| `KEY` | aircraft → station | credential, ephemeral public value, signature |
+| `KEYACK` | station → aircraft | the same, from the station |
+| `KEYCONFIRM` | aircraft → station | transcript hash, tag under the session key |
+| `SA` | aircraft → station | position, altitude and reference, speed, heading, `LAST_EXEC`, `CHALLENGE` |
+| `CC:REQUEST` | aircraft → station | a request |
+| `CC:CLEARANCE`, `CC:INSTRUCTION` | station → aircraft | an instruction and `IN_REPLY_TO` |
+| `CC:CONTACT` | station → aircraft | nominates a successor station |
+| `CC:EMERGENCY` | either | a declaration |
+| `CC:SYSTEM` | either | about the communication, not the flight |
+| `ACK` | aircraft → station | a digest of the message acknowledged, and the next challenge |
+
+### 6.2 Discards
+
+```
+  xx CC:INSTRUCTION DISCARDED at challenge: IN_REPLY_TO does not match the outstanding challenge
+```
+
+Every refusal names its check. The ones you are most likely to see:
+
+| Step | Means |
+|---|---|
+| `challenge` | the command answered a challenge the aircraft has already retired |
+| `tag` | the message was altered, or came from another session |
+| `timestamp_window` | outside Δt_max of the receiver's clock |
+| `session_state` | a command sent to an aircraft in handover |
+| `role_not_permitted` | the sender's credential does not list that role |
+| `sector` | the station is not credentialled for the airspace reported |
+| `issuer_signature` | the credential was not signed by a trusted issuer |
+
+A handful of `challenge` discards in a fast replay is normal and is the
+protocol working: where two reports overtake one another the station may
+answer one the aircraft has already superseded, which costs a refusal and a
+resend on the following report. At `--speed 20` or higher you will see
+several; at real time, few.
+
+---
+
+## 7. Logs
+
+| Path | What |
+|---|---|
+| `logs/<STATION>.log` | everything that window printed |
+| `logs/OOABC.log` | the aircraft's side |
+| `logs/scenario_log.json` | the recorder's capture, with `--record` |
+| `logs/pids/*.pid` | one per running process, used by the stop script |
+| `logs/mqtt_recorder.out` | the recorder's own output |
+
+A quick count of what a station accepted and refused:
+
+```bash
+grep -c accepted logs/EBBR_GND.log
+grep -o 'DISCARDED at [a-z_]*' logs/*.log | sort | uniq -c
+```
+
+---
+
+## 8. Adding an aircraft or a station
+
+### A station
+
+1. Add its name and sector to `STATIONS` in `scripts/provision.py`.
+2. Add the name to `STATIONS` in `visualisation/launch_all_stations.sh`.
+3. `python3 scripts/provision.py`
+
+Sectors use dotted containment: a credential for `EBBU` covers `EBBU.EBBR`.
+
+### An aircraft
+
+1. Add its registration to `AIRCRAFT` in `scripts/provision.py`.
+2. `python3 scripts/provision.py`
+3. Add its metadata to `config/aircraft_db.json` if the scenario tooling
+   needs it.
+
+### A scenario
+
+`scripts/build_scenario_from_tables.py` builds one from CSV. The CONTACT rows
+determine the sequence of controlling stations, and every station named must
+hold a credential.
+
+---
+
+## 9. Troubleshooting
+
+**Every message discarded at `issuer_signature`.**
+The trust anchors and the issuer's key have drifted apart. Run
+`python3 scripts/provision.py` and check it ends with "every credential
+verifies against the trust anchor".
+
+**`No credential for <name>`.**
+That principal was never provisioned. Add it to `scripts/provision.py` and
+reprovision.
+
+**The aircraft says "no answer from <station>, retrying".**
+The station is not running, is not subscribed, or the broker is down. The
+aircraft repeats the first KEY five times before giving up; check the
+station's window opened and shows "subscribed to aviation/+/<NAME>".
+
+**Nothing is delivered, but everything says it connected.**
+Usually the broker: `nc -z 127.0.0.1 1883`. If it is up, check the station
+window printed its "subscribed to" line, which is printed from the connect
+callback and so proves the subscription was actually issued.
+
+**Terminal asks to terminate running processes when closing.**
+Use `./stop_demo.sh` rather than closing windows by hand. If it still asks,
+`ls logs/pids/` shows whether the processes registered themselves.
+
+**The windows do not close.**
+`stop_all_listeners.sh` reports how many it closed. It matches windows whose
+title contains `AV-LISTENER:`, so a window you have renamed will not be
+closed. macOS may also need Terminal to be allowed to control itself under
+Privacy & Security → Automation.
+
+**Everything discarded at `timestamp_window`.**
+The clock is off by more than Δt_max (120 s), or a scenario is being replayed
+against stale credentials. Reprovision.
+
+**`ModuleNotFoundError: No module named 'protocol'`.**
+Run from the repository root with the virtual environment active, or
+reinstall with `pip install -e .`.
