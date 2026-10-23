@@ -19,10 +19,8 @@ both (Section 3.3.2). The labels share a prefix and end with a NUL, and no
 label contains a NUL, so the set is prefix-free: no label followed by one
 input can equal another label followed by a different input.
 
-NOTE ON THE LIBRARY: the paper's Section 5.1 says signatures and key agreement
-use PyNaCl. This module uses `cryptography`, which is what the repository has
-always used. One of the two has to change; the code is the easier place to be
-right, so this is flagged rather than silently settled.
+Signatures and key agreement use `cryptography` (PyCA), which is what the
+repository has always used and what Section 5.1 names.
 """
 
 from __future__ import annotations
@@ -56,6 +54,11 @@ L_ACK = b"AGCP-v1:ackhash\x00"
 #: Ascon-CXOF128 customisation string for the session key, equation (4).
 C_SESSION = b"AGCP-v1:session-key"
 
+#: Reserved byte separating the two bodies in the transcript hash, equation
+#: (5). A message body is printable ASCII with CRLF terminators, so a zero
+#: byte cannot occur inside one and the boundary is unambiguous.
+SEPARATOR = b"\x00"
+
 #: Bytes of key material derived from the shared value. The Ascon-Mac key is
 #: the first 16 of these; the remainder is reserve. Ascon-Mac takes a 16-byte
 #: key and 16 bytes is the protocol's 128-bit security level.
@@ -65,14 +68,8 @@ MAC_KEY_BYTES = 16
 #: Ascon-Mac tag length in bytes (128-bit).
 TAG_BYTES = 16
 
-#: Challenge length in bytes.
-#:
-#: OPEN SPEC POINT: equation (6) gives the challenge as an Ascon-Hash256
-#: digest, which is 32 bytes, but the example message in Section 3.3.1 shows
-#: a 22-character Base64 value, which is 16 bytes. 16 is the protocol's
-#: security level and is what the example prints, so the digest is truncated
-#: here. If the paper is to keep the example it should say that it truncates.
-CHALLENGE_BYTES = 16
+#: Challenge length in bytes: the full Ascon-Hash256 digest, untruncated.
+CHALLENGE_BYTES = 32
 
 #: LAST_EXEC before any command has been acted upon (Section 3.3.3).
 ZERO_CHALLENGE = b"\x00" * CHALLENGE_BYTES
@@ -198,10 +195,15 @@ def session_key(shared: bytes) -> bytes:
 
 def transcript_hash(m_key: bytes, m_keyack: bytes) -> bytes:
     """
-    Equation (5): h = Ascon-Hash256(L_tr || m_KEY || m_KEYACK), over the two
-    preceding message bodies with their signatures excluded.
+    Equation (5): h = Ascon-Hash256(L_tr || m_KEY || 0x00 || m_KEYACK), over
+    the two preceding message bodies with their signatures excluded.
+
+    The reserved byte fixes the boundary between the bodies. Without it the
+    concatenation alone would not determine the split, and the confirmation
+    is meant to tie both parties to the whole exchange, not to a byte string
+    that two different exchanges could produce.
     """
-    return ascon_hash(L_TR + m_key + m_keyack, "Ascon-Hash256")
+    return ascon_hash(L_TR + m_key + SEPARATOR + m_keyack, "Ascon-Hash256")
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +243,10 @@ def ack_hash(body: bytes) -> bytes:
     """
     The ACK digest of the acknowledged body, under a label of its own
     (Section 3.3.3), identifying that message unambiguously when several are
-    outstanding. Truncated to the protocol's security level, as the challenge
-    is, so the field is the same width on the wire.
+    outstanding.
+
+    One input, so there is no boundary to fix: the label ends with the
+    reserved byte and no label contains one, which already separates it from
+    the body.
     """
-    return ascon_hash(L_ACK + body, "Ascon-Hash256")[:CHALLENGE_BYTES]
+    return ascon_hash(L_ACK + body, "Ascon-Hash256")

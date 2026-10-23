@@ -11,16 +11,14 @@ the received buffer rather than re-encoding parsed fields.
 Wire rules (Section 3.3.1):
 
   * one field per line: an upper-case NAME, a colon and a space, the value,
-    and a line terminator;
+    and a carriage return and line feed;
   * printable ASCII only; no value contains a line terminator, so field
     boundaries are unambiguous and a message admits exactly one parse;
   * timestamps are ISO 8601 with an explicit offset; binary values are
     URL-safe Base64 without padding.
 
-OPEN SPEC POINT (LINE_TERMINATOR): Section 3.3.1 says each line ends with "a
-terminating carriage return", so this module uses a bare CR, exactly as
-written. If the intent was CRLF, change the constant here and the sentence in
-the paper together -- they must not drift apart.
+The line terminator is CRLF. Section 3.3.1 says so, and because no value may
+contain either byte, field boundaries are unambiguous.
 """
 
 from __future__ import annotations
@@ -28,8 +26,8 @@ from __future__ import annotations
 import re
 from typing import Iterable, Sequence
 
-#: Line terminator. See OPEN SPEC POINT in the module docstring.
-LINE_TERMINATOR = b"\r"
+#: Line terminator: CRLF (Section 3.3.1).
+LINE_TERMINATOR = b"\r\n"
 
 #: Separator between a field name and its value.
 SEPARATOR = b": "

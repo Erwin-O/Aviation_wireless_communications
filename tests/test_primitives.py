@@ -18,8 +18,8 @@ class TestBase64(unittest.TestCase):
             P.unb64u(P.b64u(b"\x00" * 16) + "=")
 
     def test_zero_challenge_matches_the_example_width(self):
-        # The SA example in Section 3.3.1 prints a 22-character LAST_EXEC.
-        self.assertEqual(len(P.b64u(P.ZERO_CHALLENGE)), 22)
+        # The SA example in Section 3.3.1 prints a 43-character LAST_EXEC.
+        self.assertEqual(len(P.b64u(P.ZERO_CHALLENGE)), 43)
 
 
 class TestSignatures(unittest.TestCase):
@@ -95,8 +95,7 @@ class TestDomainSeparation(unittest.TestCase):
     def test_ephemeral_and_challenge_differ_on_the_same_inputs(self):
         r, sk = P.random_r(), P.generate_kex_key()[0]
         self.assertNotEqual(
-            P.derive_ephemeral_scalar(r, sk)[: P.CHALLENGE_BYTES],
-            P.derive_challenge(r, sk),
+            P.derive_ephemeral_scalar(r, sk), P.derive_challenge(r, sk)
         )
 
     def test_labels_are_prefix_free(self):
@@ -135,9 +134,10 @@ class TestChallenge(unittest.TestCase):
         sk = P.generate_kex_key()[0]
         self.assertNotEqual(P.new_challenge(sk), P.new_challenge(sk))
 
-    def test_challenge_width_matches_the_example(self):
+    def test_challenge_is_a_full_digest(self):
         sk = P.generate_kex_key()[0]
-        self.assertEqual(len(P.b64u(P.new_challenge(sk))), 22)
+        self.assertEqual(len(P.new_challenge(sk)), 32)
+        self.assertEqual(len(P.b64u(P.new_challenge(sk))), 43)
 
     def test_known_r_does_not_determine_the_challenge(self):
         r = P.random_r()
@@ -155,26 +155,25 @@ class TestTranscript(unittest.TestCase):
             P.transcript_hash(b"A", b"B"), P.transcript_hash(b"B", b"A")
         )
 
-    def test_boundary_between_the_two_bodies_is_ambiguous(self):
+    def test_the_boundary_between_the_two_bodies_is_fixed(self):
         """
-        KNOWN SPEC ISSUE, documented here rather than silently patched.
-
-        Equation (5) concatenates the two bodies with no length prefix and no
-        separator, so h(x, yz) == h(xy, z): the split between m_KEY and
-        m_KEYACK is not determined by the hash input. Each body is a complete
-        encoded message, which makes a shuffle hard to realise, but it is not
-        excluded by the construction, and the confirmation is supposed to tie
-        the parties to *the whole exchange*.
-
-        The fix is one line in both the paper and `transcript_hash`: prefix
-        each body with its length, or separate them with a reserved byte. This
-        test asserts the current, specified behaviour so that changing the
-        construction fails here and the paper gets changed with it.
+        The reserved byte of equation (5) determines the split. Without it
+        h(x, yz) would equal h(xy, z) and the confirmation would tie the
+        parties to a concatenation rather than to the exchange.
         """
-        self.assertEqual(
+        self.assertNotEqual(
             P.transcript_hash(b"KEY", b"ACKBODY"),
             P.transcript_hash(b"KEYACK", b"BODY"),
         )
+
+    def test_a_body_cannot_contain_the_reserved_byte(self):
+        """
+        The separator works because the encoding cannot produce it: message
+        bodies are printable ASCII with CRLF terminators.
+        """
+        from protocol import encoding
+        wire = encoding.encode([("ROLE", "KEY"), ("FROM", "OOABC")])
+        self.assertNotIn(P.SEPARATOR, wire)
 
 
 if __name__ == "__main__":

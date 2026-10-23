@@ -17,8 +17,8 @@ SA_EXAMPLE = [
     ("SPEED", "0"),
     ("HEADING", "334"),
     ("ON_GROUND", "1"),
-    ("LAST_EXEC", "AAAAAAAAAAAAAAAAAAAAAA"),
-    ("CHALLENGE", "7Hq2lP0vZt4rKx9mNcB1Qw"),
+    ("LAST_EXEC", "A" * 43),
+    ("CHALLENGE", "7Hq2lP0vZt4rKx9mNcB1QwRtY6uIoP8aSdFgHjKlZx0"),
 ]
 
 
@@ -40,7 +40,7 @@ class TestOneParse(unittest.TestCase):
     """"A message admits exactly one parse" is a security property."""
 
     def test_duplicate_field_is_rejected_on_parse(self):
-        wire = b"ROLE: SA\rROLE: CC:CLEARANCE\r"
+        wire = b"ROLE: SA\r\nROLE: CC:CLEARANCE\r\n"
         with self.assertRaises(EncodingError):
             encoding.parse(wire)
 
@@ -50,15 +50,15 @@ class TestOneParse(unittest.TestCase):
 
     def test_unterminated_message_is_rejected(self):
         with self.assertRaises(EncodingError):
-            encoding.parse(b"ROLE: SA")
+            encoding.parse(b"ROLE: SA\r")
 
     def test_line_without_separator_is_rejected(self):
         with self.assertRaises(EncodingError):
-            encoding.parse(b"ROLE SA\r")
+            encoding.parse(b"ROLE SA\r\n")
 
     def test_lower_case_field_name_is_rejected(self):
         with self.assertRaises(EncodingError):
-            encoding.parse(b"role: SA\r")
+            encoding.parse(b"role: SA\r\n")
 
     def test_non_ascii_value_is_rejected(self):
         with self.assertRaises(EncodingError):
@@ -66,11 +66,11 @@ class TestOneParse(unittest.TestCase):
 
     def test_embedded_terminator_cannot_forge_a_field(self):
         with self.assertRaises(EncodingError):
-            encoding.encode([("TO", "EBBR\rROLE: CC:CLEARANCE")])
+            encoding.encode([("TO", "EBBR\r\nROLE: CC:CLEARANCE")])
 
     def test_parse_rejects_str(self):
         with self.assertRaises(EncodingError):
-            encoding.parse("ROLE: SA\r")
+            encoding.parse("ROLE: SA\r\n")
 
 
 class TestAuthenticatedRegion(unittest.TestCase):
