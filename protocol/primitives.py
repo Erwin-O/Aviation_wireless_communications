@@ -113,6 +113,16 @@ def generate_signing_key() -> tuple[bytes, bytes]:
     )
 
 
+def public_signing_key(private_key: bytes) -> bytes:
+    """The Ed25519 public key for a stored private key."""
+    return Ed25519PrivateKey.from_private_bytes(private_key).public_key().public_bytes_raw()
+
+
+def public_kex_key(private_key: bytes) -> bytes:
+    """The X25519 public value for a stored long-term kex secret."""
+    return X25519PrivateKey.from_private_bytes(private_key).public_key().public_bytes_raw()
+
+
 def sign(private_key: bytes, message: bytes) -> bytes:
     """Ed25519 signature over exactly `message`."""
     return Ed25519PrivateKey.from_private_bytes(private_key).sign(message)
