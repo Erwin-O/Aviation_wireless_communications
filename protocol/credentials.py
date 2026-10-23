@@ -33,11 +33,11 @@ OPEN SPEC POINTS, both flagged rather than quietly settled:
 
 from __future__ import annotations
 
-import enum
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from protocol import encoding, primitives
+from protocol.rejection import Rejected, Step
 
 ISSUER_SIG = "ISSUER_SIG"
 
@@ -54,25 +54,9 @@ FIELDS = (
 )
 
 
-class Step(enum.Enum):
-    """The step of the verification order at which a message was discarded."""
-
-    CREDENTIAL_MALFORMED = "credential_malformed"
-    ISSUER_UNKNOWN = "issuer_unknown"
-    ISSUER_SIGNATURE = "issuer_signature"
-    VALIDITY = "validity"
-    SUBJECT = "subject"
-    SECTOR = "sector"
-    MESSAGE_SIGNATURE = "message_signature"
-
-
-class CredentialRejected(Exception):
-    """Raised when verification fails, carrying the step that failed."""
-
-    def __init__(self, step: Step, detail: str = "") -> None:
-        super().__init__(f"{step.value}: {detail}" if detail else step.value)
-        self.step = step
-        self.detail = detail
+#: Kept as a name for readers of Section 3.3.2; the steps and the exception
+#: are shared with the rest of the protocol (see protocol.rejection).
+CredentialRejected = Rejected
 
 
 @dataclass(frozen=True)
@@ -148,12 +132,12 @@ def parse(raw: bytes) -> Credential:
         sector = encoding.get(fields, "SECTOR")
         encoding.require(fields, ISSUER_SIG)
     except Exception as exc:
-        raise CredentialRejected(Step.CREDENTIAL_MALFORMED, str(exc)) from exc
+        raise Rejected(Step.CREDENTIAL_MALFORMED, str(exc)) from exc
 
     if len(verify_key) != 32:
-        raise CredentialRejected(Step.CREDENTIAL_MALFORMED, "VERIFY_KEY is not 32 bytes")
+        raise Rejected(Step.CREDENTIAL_MALFORMED, "VERIFY_KEY is not 32 bytes")
     if not roles:
-        raise CredentialRejected(Step.CREDENTIAL_MALFORMED, "no permitted roles")
+        raise Rejected(Step.CREDENTIAL_MALFORMED, "no permitted roles")
 
     return Credential(
         issuer=issuer,
@@ -193,22 +177,22 @@ def verify(
     # 1. issuer signature against a trust anchor
     anchor = trust_anchors.get(cred.issuer)
     if anchor is None:
-        raise CredentialRejected(Step.ISSUER_UNKNOWN, cred.issuer)
+        raise Rejected(Step.ISSUER_UNKNOWN, cred.issuer)
     try:
         signed_region = encoding.authenticated_region(raw, ISSUER_SIG)
         sig = primitives.unb64u(
             encoding.require(encoding.parse(raw), ISSUER_SIG)
         )
     except Exception as exc:
-        raise CredentialRejected(Step.CREDENTIAL_MALFORMED, str(exc)) from exc
+        raise Rejected(Step.CREDENTIAL_MALFORMED, str(exc)) from exc
     if not primitives.verify_signature(anchor, signed_region, sig):
-        raise CredentialRejected(Step.ISSUER_SIGNATURE, cred.issuer)
+        raise Rejected(Step.ISSUER_SIGNATURE, cred.issuer)
 
     # 2. validity interval against the receiver's clock
     if now < cred.not_before:
-        raise CredentialRejected(Step.VALIDITY, "not yet valid")
+        raise Rejected(Step.VALIDITY, "not yet valid")
     if now > cred.not_after:
-        raise CredentialRejected(Step.VALIDITY, "expired")
+        raise Rejected(Step.VALIDITY, "expired")
 
     # 3. subject identity against the FROM field
     if cred.subject != expect_subject:
@@ -231,7 +215,7 @@ def verify(
         if not primitives.verify_signature(
             cred.verify_key, signed_message, message_signature
         ):
-            raise CredentialRejected(Step.MESSAGE_SIGNATURE, cred.subject)
+            raise Rejected(Step.MESSAGE_SIGNATURE, cred.subject)
 
     return cred
 
