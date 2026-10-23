@@ -314,7 +314,9 @@ class Station:
         Relinquish authority by naming a successor. The station moves its own
         session to handover on transmission.
         """
-        row = self.table.require(aircraft)
+        row = self.table.get(aircraft)
+        if row is None or row.state is not S.State.ESTABLISHED:
+            return []
         out = self._issue(row, O.CC_CONTACT, successor, now)
         if out:
             self.table.begin_handover(aircraft, successor, now)

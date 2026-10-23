@@ -7,12 +7,21 @@ set -euo pipefail
 HOST="127.0.0.1"
 PORT="1883"
 TOPIC="#"
+TOPIC_BASE="aviation"
 VIEW="ascii"
 OUT_ARRAY="logs/scenario_log.json"
 
 RECORD=1
 SCENARIO=""
 DEBUG_SCENARIO=1
+
+# "protocol" runs the specification of Section 3.3: scripts/station.py and
+# scripts/aircraft.py, credentials, the three-message handshake and the
+# challenge exchange. "legacy" runs the earlier demo_subscriber.py and
+# scenario_player.py, kept until the old scripts are retired.
+MODE="protocol"
+SPEED="1.0"
+PROVISION=1
 
 # If you already have launch_all_listeners.sh / tile_listeners.sh, we'll call them.
 LAUNCH_LISTENERS=1
@@ -42,13 +51,20 @@ Options:
   --record               Start mqtt_recorder
   --no-record            Explicitly do not start mqtt_recorder (default)
 
-  --scenario <path>      Start scenario_player with given scenario JSON
-  --debug-scenario        Pass --debug to scenario_player
+  --scenario <path>      Fly this scenario
+  --debug-scenario        Pass --debug to the aircraft/player
+
+  --legacy               Run the pre-conformance scripts instead
+  --speed <factor>       Scenario speed multiplier (default: 1.0)
+  --no-provision         Do not reissue credentials before starting
 
   -h, --help             Show this help
 
 Examples:
-  # Listeners only
+  # The full demo: provision, stations, recorder, flight at 20x
+  ./run_demo.sh --record --scenario scenarios/commercial_flight_EBBR-EDDF.json --speed 20
+
+  # Stations only
   ./run_demo.sh
 
   # Listeners + recorder
@@ -70,17 +86,33 @@ ensure_dirs() {
   mkdir -p "$PID_DIR"
 }
 
+provision() {
+  if [[ "$MODE" != "protocol" || "$PROVISION" -eq 0 ]]; then
+    return
+  fi
+  info "Issuing credentials (scripts/provision.py)"
+  python3 scripts/provision.py >/dev/null || {
+    warn "Provisioning failed. Stations will have no credential to show."
+    return 1
+  }
+  info "Credentials issued; trust anchors in config/trust_anchors.json"
+}
+
 start_listeners() {
   if [[ "$LAUNCH_LISTENERS" -eq 0 ]]; then
     info "Skipping listeners (--no-listeners)."
     return
   fi
 
-  if [[ -x "./visualisation/launch_all_listeners.sh" ]]; then
-    info "Launching listeners via ./visualisation/launch_all_listeners.sh"
-    ./visualisation/launch_all_listeners.sh
+  local launcher="./visualisation/launch_all_stations.sh"
+  [[ "$MODE" == "legacy" ]] && launcher="./visualisation/launch_all_listeners.sh"
+
+  if [[ -x "$launcher" ]]; then
+    info "Launching stations via $launcher"
+    SCENARIO="$SCENARIO" SPEED="$SPEED" MQTT_HOST="$HOST" MQTT_PORT="$PORT" \
+      TOPIC_BASE="$TOPIC_BASE" "$launcher"
   else
-    warn "launch_all_listeners.sh not found or not executable. Skipping listeners."
+    warn "$launcher not found or not executable. Skipping stations."
   fi
 
   wait_for_av_listener_windows() {
@@ -171,13 +203,23 @@ start_scenario() {
     return
   fi
 
-  info "Starting scenario_player: $SCENARIO"
-  if [[ "$DEBUG_SCENARIO" -eq 1 ]]; then
-    python3 scripts/scenario_player.py --publish "$SCENARIO" --debug
-
-  else
-    python3 scripts/scenario_player.py --publish "$SCENARIO"
+  if [[ "$MODE" == "legacy" ]]; then
+    info "Starting scenario_player (legacy): $SCENARIO"
+    if [[ "$DEBUG_SCENARIO" -eq 1 ]]; then
+      python3 scripts/scenario_player.py --publish "$SCENARIO" --debug
+    else
+      python3 scripts/scenario_player.py --publish "$SCENARIO"
+    fi
+    return
   fi
+
+  info "Flying $SCENARIO at ${SPEED}x (scripts/aircraft.py)"
+  local extra=""
+  [[ "$DEBUG_SCENARIO" -eq 1 ]] && extra="--debug"
+  python3 scripts/aircraft.py \
+    --scenario "$SCENARIO" \
+    --host "$HOST" --port "$PORT" --base "$TOPIC_BASE" \
+    --speed "$SPEED" $extra
 }
 
 # -----------------------------
@@ -193,6 +235,10 @@ while [[ $# -gt 0 ]]; do
 
     --no-listeners) LAUNCH_LISTENERS=0; shift ;;
     --no-tile) TILE=0; shift ;;
+
+    --legacy) MODE="legacy"; shift ;;
+    --speed) SPEED="$2"; shift 2 ;;
+    --no-provision) PROVISION=0; shift ;;
 
     --record) RECORD=1; shift ;;
     --no-record) RECORD=0; shift ;;
@@ -213,10 +259,11 @@ done
 # Main
 # -----------------------------
 ensure_dirs
+provision
 start_listeners
 start_recorder
 start_scenario
 
 info "Done."
-info "To stop listeners: ./visualisation/stop_all_listeners.sh"
-info "To stop recorder:  ./stop_demo.sh   (recommended)  OR  kill \$(cat $REC_PID_FILE)"
+info "To stop everything: ./stop_demo.sh"
+info "Stations only:      ./visualisation/stop_all_listeners.sh"
