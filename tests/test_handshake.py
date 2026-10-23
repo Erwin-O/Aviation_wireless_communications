@@ -15,7 +15,8 @@ from protocol.rejection import Rejected, Step
 NOW = datetime(2025, 11, 17, 4, 0, 0, tzinfo=timezone.utc)
 HOUR = timedelta(hours=1)
 
-AIRCRAFT_ROLES = ["KEY", "KEYCONFIRM", "SA", "ACK", "CC:REQUEST", "CC:EMERGENCY"]
+AIRCRAFT_ROLES = ["KEY", "KEYCONFIRM", "SA", "ACK",
+                  "CC:REQUEST", "CC:EMERGENCY", "CC:SYSTEM"]
 GROUND_ROLES = ["KEYACK", "CC:CLEARANCE", "CC:INSTRUCTION", "CC:CONTACT", "CC:SYSTEM"]
 
 
