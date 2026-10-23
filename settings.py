@@ -14,7 +14,9 @@ CLIENT_KEEPALIVE = 60           # seconds
 TOPIC_BASE = "aviation"         # root prefix for all topics
 
 # --- Cryptographic algorithms (informational labels) ---
-MAC_ALG     = "BLAKE3"          # data-plane MAC
+# The data-plane MAC is Ascon-Mac and is no longer selectable: a protocol
+# that names its primitives in one place has nothing to dispatch on.
+MAC_ALG     = "Ascon-Mac"       # data-plane MAC (informational)
 KEY_SIG_ALG = "Ed25519"         # control-plane signing algorithm
 
 # --- Feature flags ---

@@ -252,7 +252,7 @@ class Subscriber:
 
         dbg(self.debug, f"KEY fields present: {sorted(fields.keys())}")
 
-        needed = ("ts", "from", "to", "public_key_ascii", "session_id", "wrapped_key_b64", "key_sig_b64")
+        needed = ("ts", "from", "to", "public_key_ascii", "session_id", "wrapped_key_b64", "signature")
         if not all(k in fields for k in needed):
             print("[KEY] Missing fields in KEY; ignoring.")
             if self.debug:
@@ -265,7 +265,7 @@ class Subscriber:
         pubkey_msg = fields["public_key_ascii"]
         sid     = fields["session_id"]
         wrapped = fields["wrapped_key_b64"]
-        sig     = fields["key_sig_b64"]
+        sig     = fields["signature"]
 
         # Drop keys not intended for this station
         to_norm = normalise_station(to_s)
@@ -493,7 +493,7 @@ class Subscriber:
                 traceback.print_exc()
             return
 
-        needed = ("ts", "from", "to", "type", "body", "sig")
+        needed = ("ts", "from", "to", "type", "body", "mac")
         missing = [k for k in needed if k not in fields]
         if missing:
             print(f"[CC] Missing required fields: {', '.join(missing)}; ignoring.")
@@ -514,7 +514,7 @@ class Subscriber:
         ts   = fields["ts"]
         ctyp = fields["type"].upper()
         body = fields.get("body", "")
-        sig  = fields.get("sig", "")
+        mac  = fields.get("mac", "")
 
 
         body_show = body if len(body) <= 120 else (body[:117] + "…")

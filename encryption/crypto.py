@@ -1,9 +1,12 @@
 # encryption/crypto.py
-# Cryptographic utilities: base64, random IDs/keys, MAC (BLAKE3/ASCON), sign, wrap.
+# Cryptographic utilities: base64, random IDs/keys, MAC, sign, wrap.
+#
+# Every keyed or hashed value here is Ascon (NIST SP 800-232), via
+# encryption/ascon.py. BLAKE3 is gone: it was never named in the
+# specification, and the data-plane MAC it used to compute is Ascon-Mac.
 
 import base64
 import secrets
-import blake3
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey, Ed25519PublicKey
@@ -67,39 +70,28 @@ def random_session_key(length: int = 32) -> bytes:
     return secrets.token_bytes(length)
 
 # ======================================================
-# BLAKE3 MAC
-# ======================================================
-
-def blake3_mac(data: bytes, key: bytes) -> bytes:
-    """
-    Compute BLAKE3 keyed MAC (32 bytes).
-    """
-    h = blake3.blake3(key=key)
-    h.update(data)
-    return h.digest()
-
-def blake3_mac_b64u(key: bytes, data: bytes) -> str:
-    return bytes_to_b64u(blake3_mac(data, key))
-
-# ======================================================
-# Algorithm-agnostic MAC (dispatches on settings.MAC_ALG)
+# Data-plane MAC: Ascon-Mac
 # ======================================================
 
 def compute_mac(key: bytes, data: bytes) -> bytes:
     """
-    Compute a keyed MAC using the algorithm configured in settings.MAC_ALG.
-    Returns 32 bytes for BLAKE3, 16 bytes for ASCON-MAC.
-    For ASCON-MAC the first 16 bytes of key are used (session key is 32 bytes,
-    any 16-byte slice carries full 128-bit entropy).
+    Ascon-Mac tag (16 bytes) over `data` under `key`.
+
+    The message body travels in clear and this value protects it: an
+    authenticator nobody without the key can produce, computed in one pass
+    over the message rather than by hashing and then encrypting the hash.
+    Ascon-Mac takes a 16-byte key; the session key is longer, so the first
+    16 bytes are used, which carry the protocol's full 128-bit security.
     """
-    from settings import MAC_ALG
-    if MAC_ALG == "ASCON-MAC":
-        from encryption.ascon import ascon_mac
-        return ascon_mac(key[:16], data)
-    return blake3_mac(data, key)
+    from encryption.ascon import ascon_mac
+    return ascon_mac(key[:16], data)
 
 def compute_mac_b64u(key: bytes, data: bytes) -> str:
     return bytes_to_b64u(compute_mac(key, data))
+
+def verify_mac(key: bytes, data: bytes, tag: bytes) -> bool:
+    """Constant-time verification of an Ascon-Mac tag."""
+    return secrets.compare_digest(compute_mac(key, data), tag)
 
 # ======================================================
 # Ed25519 sign / verify
@@ -159,13 +151,12 @@ def ed25519_verify(public_key_b64u: str, message, signature_b64u: str) -> bool:
 
 def _kdf_wrap_key(shared_secret: bytes) -> bytes:
     """
-    Derive a 32-byte AEAD key from ECDH shared secret.
-    We use BLAKE3 as a simple KDF here.
+    Derive a 32-byte AEAD key from an ECDH shared secret, with Ascon-CXOF128
+    under a customisation string for domain separation.
     """
-    h = blake3.blake3()
-    h.update(shared_secret)
-    h.update(b"|WRAP-V1|")
-    return h.digest()  # 32 bytes
+    from encryption.ascon import ascon_hash
+    return ascon_hash(shared_secret, "Ascon-CXOF128", hashlength=32,
+                      customization=b"WRAP-V1")
 
 def wrap_session_key(sender_x25519_priv: bytes, recipient_x25519_pub: bytes, session_key: bytes) -> str:
     """
@@ -209,33 +200,6 @@ def unwrap_session_key(receiver_x25519_priv: bytes, sender_x25519_pub: bytes, wr
     nonce, ct = blob[:12], blob[12:]
 
     return aead.decrypt(nonce, ct, None)
-
-# ======================================================
-# SA/CC "encrypted MAC" check used by subscriber
-# ======================================================
-
-def _hash_keystream(key: bytes, session_id: str, length: int = 32) -> bytes:
-    """Derive a BLAKE3 keystream of `length` bytes from key + session_id."""
-    h = blake3.blake3(key=key)
-    h.update(session_id.encode("utf-8"))
-    return h.digest(length=length)
-
-def dec_hash(core: str, ehash_b64: str, key: bytes, session_id: str) -> bool:
-    """
-    Verify an XOR-obfuscated MAC over `core`.
-    ehash = XOR(compute_mac(key, core), keystream)
-    Works for both BLAKE3 (32-byte tag) and ASCON-MAC (16-byte tag).
-    """
-    try:
-        ehash = _b64_any_to_bytes(ehash_b64)
-    except Exception as e:
-        print(f"[VERIFY] base64 decode error: {e}")
-        return False
-
-    mac = compute_mac(key, core.encode("utf-8"))
-    ks  = _hash_keystream(key, session_id, length=len(mac))
-    expected = bytes(a ^ b for a, b in zip(mac, ks))
-    return secrets.compare_digest(expected, ehash)
 
 # ---------------------------------------------------------------------
 # X25519 unwrap helper (derive shared secret from base64url keys)

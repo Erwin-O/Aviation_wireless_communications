@@ -13,5 +13,6 @@ py-modules = ["mqtt_client", "settings"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-# finds core/, encryption/, config/, utils/ (all have __init__.py)
+exclude = ["tests*", "venv*"]
+# finds core/, encryption/, config/, utils/, protocol/ (all have __init__.py)
 # scripts/, visualisation/, logs/ etc. have no __init__.py and are skipped automatically

@@ -245,7 +245,7 @@ def publish_sa(
     Publish a Situational Awareness message:
 
     - Ensures a session exists for the current station (injects KEY if needed).
-    - MAC = BLAKE3(session_key, newline-joined fields in canonical order).
+    - MAC = Ascon-Mac(session_key, newline-joined fields in canonical order).
     """
     from datetime import datetime, timezone
     import time as _time_mod  # avoid shadowing global time

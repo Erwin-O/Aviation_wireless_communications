@@ -36,16 +36,16 @@ def deserialize(s: str) -> Dict[str, Any]:
 def ascii_key(core: Dict[str, Any]) -> str:
     """
     Required keys: ts, frm, to, public_key_b64u, session_id, wrapped_key_b64, key_sig_b64
-    Wire payload = signed portion (build_key_core) + KEY SIG line.
+    Wire payload = signed portion (build_key_core) + SIGNATURE line.
     """
     signed = build_key_core(
         core["ts"], core["frm"], core["to"],
         core["public_key_b64u"], core["session_id"], core["wrapped_key_b64"],
     )
-    return f"{signed}\nKEY SIG: {core['key_sig_b64']}"
+    return f"{signed}\nSIGNATURE: {core['key_sig_b64']}"
 
 
-def ascii_sa(core: Dict[str, Any], sig_b64: str) -> str:
+def ascii_sa(core: Dict[str, Any], mac_b64: str) -> str:
     """
     Required keys: ts, frm, to, alt_ft, lat, lon, gs_kt, hdg_deg, on_ground
     """
@@ -58,12 +58,12 @@ def ascii_sa(core: Dict[str, Any], sig_b64: str) -> str:
         f"SPEED: {core['gs_kt']}",
         f"HEADING: {core['hdg_deg']}",
         f"ON GROUND: {1 if core['on_ground'] else 0}",
-        f"SIG: {sig_b64}",
+        f"MAC: {mac_b64}",
     ]
     return "\n".join(lines)
 
 
-def ascii_cc(core: Dict[str, Any], sig_b64: str) -> str:
+def ascii_cc(core: Dict[str, Any], mac_b64: str) -> str:
     """
     Required keys: ts, frm, to, cc_type, body
     """
@@ -73,12 +73,12 @@ def ascii_cc(core: Dict[str, Any], sig_b64: str) -> str:
         f"TO: {core['to']}",
         f"TYPE: {core['cc_type']}",
         f"PAYLOAD: {core['body']}",
-        f"ENC_HASH: {sig_b64}",
+        f"MAC: {mac_b64}",
     ]
     return "\n".join(lines)
 
 
-def ascii_ack(core: Dict[str, Any], sig_b64: str) -> str:
+def ascii_ack(core: Dict[str, Any], mac_b64: str) -> str:
     """
     Required keys: ts, frm, to, ref_type, session_id, body
     Optional key:  ref_hash
@@ -93,7 +93,7 @@ def ascii_ack(core: Dict[str, Any], sig_b64: str) -> str:
     if core.get("ref_hash"):
         lines.append(f"REF_HASH: {core['ref_hash']}")
     lines.append(f"BODY: {core['body']}")
-    lines.append(f"SIG: {sig_b64}")
+    lines.append(f"MAC: {mac_b64}")
     return "\n".join(lines)
 
 
@@ -103,7 +103,7 @@ def build_key_core(ts: str, frm: str, to: str, pubkey_b64u: str,
                    session_id: str, wrapped: str) -> str:
     """
     The portion of a KEY wire payload that is Ed25519-signed — everything
-    above the KEY SIG line.  Identical to what ascii_key() produces without
+    above the SIGNATURE line.  Identical to what ascii_key() produces without
     its final line.  The sender signs this; the receiver calls
     key_signing_material() to extract the same bytes from the raw payload.
     """
@@ -120,12 +120,12 @@ def build_key_core(ts: str, frm: str, to: str, pubkey_b64u: str,
 def key_signing_material(raw_payload: str) -> str:
     """
     Extract the signed portion from a received KEY wire payload by discarding
-    the KEY SIG line.  Use this on the receiver side for Ed25519 verification
+    the SIGNATURE line.  Use this on the receiver side for Ed25519 verification
     so that exactly the bytes that were sent are verified — no reconstruction.
     """
     lines = []
     for line in raw_payload.splitlines():
-        if line.strip().upper().startswith("KEY SIG"):
+        if line.strip().upper().startswith("SIGNATURE"):
             break
         lines.append(line)
     return "\n".join(lines)
@@ -171,8 +171,8 @@ def parse_ascii_block(payload: str) -> Dict[str, Any]:
             d["session_id"] = val
         elif key == "WRAPPED SESSION KEY":
             d["wrapped_key_b64"] = val
-        elif key == "KEY SIG":
-            d["key_sig_b64"] = val
+        elif key == "SIGNATURE":
+            d["signature"] = val
 
         # SA fields
         elif key == "ALTITUDE":
@@ -208,10 +208,8 @@ def parse_ascii_block(payload: str) -> Dict[str, Any]:
         elif key == "REF_HASH":
             d["ref_hash"] = val
 
-        # Signature fields
-        elif key == "SIG":
-            d["sig"] = val
-        elif key == "ENC_HASH":
-            d["sig"] = val
+        # Authenticator
+        elif key == "MAC":
+            d["mac"] = val
 
     return d
