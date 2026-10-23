@@ -37,3 +37,7 @@ mqtt-broker/mosquitto/log/*
 .vscode/
 *.swp
 *.swo
+
+# test bytecode
+tests/__pycache__/
+protocol/__pycache__/
