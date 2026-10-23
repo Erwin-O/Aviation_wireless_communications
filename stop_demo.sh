@@ -5,7 +5,9 @@ PID_DIR="logs/pids"
 REC_PID_FILE="$PID_DIR/mqtt_recorder.pid"
 
 echo "[stop_demo] Stopping listeners (if script exists)..."
-if [[ -x "./stop_all_listeners.sh" ]]; then
+if [[ -x "./visualisation/stop_all_listeners.sh" ]]; then
+  ./visualisation/stop_all_listeners.sh
+elif [[ -x "./stop_all_listeners.sh" ]]; then
   ./stop_all_listeners.sh
 else
   echo "[stop_demo][WARN] stop_all_listeners.sh not found or not executable."
