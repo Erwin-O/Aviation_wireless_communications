@@ -1,0 +1,85 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite the paper it implements (below under
+  preferred-citation). If you need to refer to this code specifically, for
+  example to a particular release, cite the software entry as well.
+title: >-
+  Reference implementation of a secure, message-centric air-ground
+  communication protocol
+abstract: >-
+  A research implementation of the protocol specified in Section 3.3 of the
+  accompanying paper: a three-message mutually authenticated key agreement
+  with explicit confirmation over the transcript, credentials carried in the
+  messages and verified against issuer trust anchors, a challenge issued by
+  the aircraft binding each command to the report it answers, and transfer of
+  control between ground stations requiring no channel between them. Built on
+  Ed25519, X25519 and the Ascon family of lightweight primitives.
+type: software
+version: 0.1.0
+date-released: '2026-10-24'
+license: Apache-2.0
+# Fill in once the repository is public:
+# repository-code: 'https://github.com/<account>/<repository>'
+# Fill in once a release has been archived and a DOI minted:
+# doi: 10.5281/zenodo.XXXXXXX
+keywords:
+  - air-ground communication
+  - air traffic management
+  - authenticated key exchange
+  - lightweight cryptography
+  - Ascon
+  - critical infrastructure protection
+  - unmanned aerial systems
+authors:
+  - family-names: Orye
+    given-names: Erwin
+    email: erwin@orye.eu
+    affiliation: >-
+      Centre for Digital Forensics and Cyber Security, Tallinn University of
+      Technology, Tallinn, Estonia
+  - family-names: Lafitte
+    given-names: Frédéric
+    email: frederic.lafitte@mil.be
+    affiliation: >-
+      Department of Mathematics, Royal Military Academy, Brussels, Belgium
+  - family-names: Maennel
+    given-names: Olaf
+    email: olaf.maennel@adelaide.edu.au
+    affiliation: >-
+      School of Computer and Mathematical Sciences, The University of
+      Adelaide, Adelaide, Australia
+  - family-names: Venables
+    given-names: Adrian
+    email: adrian.venables@taltech.ee
+    affiliation: >-
+      Centre for Digital Forensics and Cyber Security, Tallinn University of
+      Technology, Tallinn, Estonia
+preferred-citation:
+  type: article
+  title: >-
+    A Secure, Message-Centric Air-Ground Communication Protocol for
+    Heterogeneous Aviation Environments
+  journal: International Journal of Critical Infrastructure Protection
+  year: 2026
+  # Fill in on acceptance: volume, start, end, doi
+  authors:
+    - family-names: Orye
+      given-names: Erwin
+      email: erwin@orye.eu
+      affiliation: >-
+        Centre for Digital Forensics and Cyber Security, Tallinn University
+        of Technology, Tallinn, Estonia
+    - family-names: Lafitte
+      given-names: Frédéric
+      affiliation: >-
+        Department of Mathematics, Royal Military Academy, Brussels, Belgium
+    - family-names: Maennel
+      given-names: Olaf
+      affiliation: >-
+        School of Computer and Mathematical Sciences, The University of
+        Adelaide, Adelaide, Australia
+    - family-names: Venables
+      given-names: Adrian
+      affiliation: >-
+        Centre for Digital Forensics and Cyber Security, Tallinn University
+        of Technology, Tallinn, Estonia

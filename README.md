@@ -127,3 +127,21 @@ It does not model real bearer behaviour: processes exchange messages through
 a broker on the same host, and latency, loss and radio characteristics are
 absent. Performance on airborne hardware and across real bearers is the
 subject of a companion paper.
+
+---
+
+## Citing this work
+
+Cite the paper. `CITATION.cff` carries the metadata, and GitHub offers a
+formatted citation from it. If you need to refer to a particular state of the
+code, cite a release.
+
+---
+
+## Licence
+
+Apache-2.0. See `LICENSE`.
+
+`encryption/ascon.py` is Maria Eichlseder's pyascon reference implementation,
+released under CC0 1.0. CC0 requires no attribution; `NOTICE` records it
+anyway, because the cryptographic core of this work is hers.

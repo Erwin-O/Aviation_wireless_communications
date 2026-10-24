@@ -41,3 +41,7 @@ mqtt-broker/mosquitto/log/*
 # test bytecode
 tests/__pycache__/
 protocol/__pycache__/
+
+# Locally issued trust anchors - written by scripts/provision.py, rotates with
+# the issuer key, and useless without the matching private key
+config/trust_anchors.json

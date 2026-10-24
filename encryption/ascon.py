@@ -1,8 +1,21 @@
 #!/usr/bin/env python3
 """
-Implementation of Ascon, an authenticated cipher and hash function
-NIST SP 800-232
-https://ascon.iaik.tugraz.at/
+Implementation of Ascon, an authenticated cipher and hash function.
+NIST SP 800-232. https://ascon.iaik.tugraz.at/
+
+Provenance
+----------
+This file is taken from pyascon, the Python reference implementation by
+Maria Eichlseder, available at https://github.com/meichlseder/pyascon and
+released by its author under the Creative Commons CC0 1.0 Universal public
+domain dedication. Any local modification is recorded in this repository's
+git history.
+
+CC0 waives copyright and imposes no attribution requirement. This notice is
+given as a matter of academic practice: the cryptographic core of this work
+is Eichlseder's, not ours, and the specification it implements is the work
+of the Ascon team. The remainder of this repository is licensed under
+Apache-2.0; see LICENSE and NOTICE.
 """
 from __future__ import annotations
 
