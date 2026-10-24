@@ -24,6 +24,9 @@ clearance.
   confirmation over the transcript
 - Credentials carried in the messages, verified against **issuer** trust
   anchors rather than a directory of known principals
+- A ground station states the airspace it is working, bounded by what its
+  issuer granted it, so **any** aircraft can verify that claim with no
+  airspace data of its own, and decides for itself whether to proceed
 - A challenge the aircraft itself issues, binding every command to the report
   it answers, so a command cannot be acted upon twice or out of turn
 - Transfer of control between ground stations requiring **no channel between

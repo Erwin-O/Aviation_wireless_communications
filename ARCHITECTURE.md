@@ -150,7 +150,7 @@ Relays. Publish–subscribe routing, no security role, assumed hostile.
 ```
 aircraft                                   ground station
   |-- KEY ------------------------------------>|   credential + ephemeral, signed
-  |<-------------------------------- KEYACK ---|   credential + ephemeral, signed
+  |<-------------------------------- KEYACK ---|   the same, plus the airspace claimed
   |                                            |   pending
   |-- KEYCONFIRM ----------------------------->|   transcript hash, tagged
   |                                            |   established
@@ -201,7 +201,8 @@ key-exchange secret used only as an input to the ephemeral derivation, and a
 credential signed by an issuer. Trust anchors are issuer keys.
 
 A credential carries `ISSUER`, `SUBJECT`, `VERIFY_KEY`, `NOT_BEFORE`,
-`NOT_AFTER`, `PERMITTED_ROLES` and, for a ground station, `SECTOR`.
+`NOT_AFTER`, `PERMITTED_ROLES` and, for a ground station, `SECTOR`, the
+airspace its issuer authorised it to control.
 
 ### 6.2 Cryptographic mechanisms
 
@@ -219,8 +220,32 @@ code, so a future substitution stays local.
 
 Specified, and load-bearing: the issuer signature on the credential against a
 trust anchor, the validity interval, the subject against the message's
-sender, the sector scope, and only then the message signature. Failure at any
-step discards the message.
+sender, the sector scope wherever the credential carries a `SECTOR`, and only
+then the message signature. Failure at any step discards the message.
+
+### 6.3.1 The grant and the claim
+
+The `SECTOR` of a station's credential bounds the airspace it may control.
+`KEYACK` states, as `AIRSPACE`, which of that airspace the station is actually
+working, and the claim must lie within the bound. Covering is containment in
+the published airspace hierarchy, which the protocol specifies rather than
+leaving to the deployment.
+
+This is why the claim is carried rather than inferred. **Every aircraft can
+check it with no airspace data of its own**, because the grant and the claim
+are both in the message in front of it, inside the signed body, and the
+transcript covers them, so completing the handshake means the two parties
+agreed on the airspace and not merely on the key. An aircraft that holds
+current published airspace data makes a second, advisory comparison: that the
+claim contains where it is.
+
+The asymmetry is deliberate and it follows the division of responsibility the
+whole design rests on. The ground side bears the duty to hold a grant and to
+claim truthfully within it; the aircraft bears the duty to choose whom to
+contact. The protocol's part is to make the ground side's claim verifiable so
+the aircraft's choice is an informed one. An aircraft unwilling to accept a
+claim withholds `KEYCONFIRM` and contacts someone else, exactly as a
+nomination is a suggestion and never an instruction.
 
 ### 6.4 Replay and ordering
 
@@ -327,7 +352,7 @@ verifiable.
 
 **What it costs.** Per-session state at both endpoints, which the earlier
 design avoided. One extra handshake message per session. A credential in every
-`KEY` and `KEYACK`, which makes those messages some 700 bytes. A dependency on
+`KEY` and `KEYACK`, which makes those messages some 700 to 780 bytes. A dependency on
 credential issuance, where the residual risk now sits.
 
 **What it does not address.** Denial of service and jamming. Compromise of a

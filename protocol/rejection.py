@@ -33,6 +33,13 @@ class Step(enum.Enum):
     SECTOR = "sector"
     MESSAGE_SIGNATURE = "message_signature"
 
+    # Handshake, on the airspace a ground station claims to be working.
+    # SECTOR above is the unconditional check that the claim lies within the
+    # issuer's grant; AIRSPACE is the advisory one, made only by an aircraft
+    # that holds current published airspace data, that the claim contains
+    # where the aircraft actually is (Section 5.3).
+    AIRSPACE = "airspace"
+
     # Handshake
     TRANSCRIPT = "transcript"
 

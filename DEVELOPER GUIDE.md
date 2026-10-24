@@ -105,7 +105,7 @@ disagree about what was signed.
 
 | Purpose | Primitive | Where |
 |---|---|---|
-| Long-term signatures | Ed25519 | credentials, KEY, KEYACK |
+| Long-term signatures | Ed25519 | credentials, KEY, KEYACK (claim included) |
 | Ephemeral key agreement | X25519 | KEY, KEYACK |
 | Message authentication | Ascon-Mac, 16-byte tag | all operational messages, KEYCONFIRM |
 | Hashing | Ascon-Hash256 | ephemeral derivation, challenge, transcript, ACK digest |
@@ -178,8 +178,16 @@ Specified, and not an implementation detail:
 1. the issuer signature on the credential, against a trust anchor
 2. the validity interval, against the receiver's clock
 3. the subject identity, against the message's `FROM`
-4. the sector scope, against the airspace at issue
+4. the sector scope, against the airspace at issue, wherever the credential
+   carries a `SECTOR`
 5. and only then the message signature, against the credential's `VERIFY_KEY`
+
+"The airspace at issue" means something different in each direction. At an
+aircraft receiving `KEYACK` it is the airspace the station *claims* to be
+working, which that message states. At a station receiving an operational
+message it is the airspace the *aircraft* reports being in. Step 4 does not
+apply to a `KEY`: an aircraft's credential carries no `SECTOR`, because an
+aircraft asserts no airspace.
 
 Failure at any step discards the message. A message failing two checks must
 report the earlier one, and `tests/test_credentials.py` asserts exactly that.
@@ -194,15 +202,49 @@ Handshake roles are exempt: any principal holding a valid credential may
 establish a session, and what its credential permits governs only what it may
 do afterwards.
 
-### 5.3 Sector
+### 5.3 Sector: the grant, the claim, and who can check what
 
-Sector enforcement is a **ground-side** obligation about the station's *own*
-entitlement: "am I credentialled for the airspace this aircraft reports being
-in?" An aircraft's credential carries no `SECTOR`. Requiring the aircraft to
-check would oblige every aircraft to carry current airspace boundary data, so
-it is optional there.
+Three distinct things, and conflating them is the easiest mistake to make
+here.
+
+**The grant.** `SECTOR` in a ground station's credential is what its issuer
+authorised it to control. It bounds everything below.
+
+**The claim.** `AIRSPACE` in `KEYACK` is the airspace the station says it is
+actually working. It must lie within the grant, and `build_keyack` refuses to
+emit a claim that does not: a misconfigured station fails at home rather than
+emitting a message every aircraft will refuse.
+
+**Covering** is containment in the published airspace hierarchy, implemented
+by `default_sector_covers` as exact match or dotted-prefix containment, so
+`EBBU` covers `EBBU.EBBR`. This is now specified rather than left to the
+deployment, because two implementations disagreeing about covering would
+disagree about who may issue a clearance. A deployment whose designators are
+not dotted passes its own function to `credentials.verify`.
+
+Who checks what:
+
+| Check | Who | Conditional on | Step |
+|---|---|---|---|
+| claim within the grant | every aircraft, on `KEYACK` | nothing | `sector` |
+| claim contains the aircraft | aircraft with airspace data | holding that data | `airspace` |
+| reported position within the station's own sector | the station, per message | the caller supplying it | `sector` |
+
+The first needs no data of the aircraft's own: the grant and the claim are
+both in the message in front of it. That is the point of carrying the claim.
+The second is advisory, because requiring it would oblige every aircraft to
+carry current airspace data and so reintroduce the equipage dependency the
+design exists to avoid. An aircraft that dislikes a claim simply does not send
+`KEYCONFIRM`; the station's pending session times out. The choice of which
+station to work stays with the aircraft throughout.
 
 ```python
+# the aircraft side: `airspace` is where the aircraft is, from data it loaded
+# before the flight, and is optional
+initiator.handle_keyack(raw, now, airspace="EBBU.NORTH")
+
+# the station side: `local_sector` is its own entitlement, `airspace` the
+# position the aircraft reported
 operational.receive(raw, table, now, local="EBBR GND", as_aircraft=False,
                     local_sector="EBBU.EBBR", airspace="EBBU.NORTH")
 ```
@@ -217,7 +259,7 @@ does it and passes the result.
 ```
 aircraft                                   ground station
   |-- KEY ------------------------------------>|  credential + ephemeral, signed
-  |<-------------------------------- KEYACK ---|  credential + ephemeral, signed
+  |<-------------------------------- KEYACK ---|  the same, plus AIRSPACE
   |                                            |  pending
   |-- KEYCONFIRM ----------------------------->|  transcript, tagged under K_sess
   |                                            |  established
@@ -300,7 +342,9 @@ nothing outstanding.
 4. the timestamp lies within Δt_max
 5. a command-bearing message quotes the outstanding challenge
 6. the `ROLE` lies within the sender's `PERMITTED_ROLES`; at a station, the
-   station's own `SECTOR` covers the airspace reported
+   station's own `SECTOR` covers the airspace reported. The aircraft makes no
+   per-message airspace check: it made its one, against the claim, when the
+   session was established
 7. the session's state admits the role
 
 Steps 1 and 2 precede the paper's "verifies the tag" because a receiver

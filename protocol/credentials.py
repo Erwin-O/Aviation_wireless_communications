@@ -19,16 +19,25 @@ model work, and it is the point at which an implementation is most likely to
 err." So each failure raises `CredentialRejected` carrying the step at which
 it occurred, and the test suite asserts the step and not merely the rejection.
 
-OPEN SPEC POINTS, both flagged rather than quietly settled:
+ONE OPEN SPEC POINT, flagged rather than quietly settled: PERMITTED_ROLES is
+a list and the paper does not give its separator or whether a bare family
+permits its subtypes. This module uses commas, and requires an exact match: a
+credential must list CC:CLEARANCE to permit a clearance, and listing CC
+permits nothing. The conservative reading, since CC:CONTACT is what nominates
+a successor station.
+SECTOR AND COVERING are now specified. The SECTOR of a ground station's
+credential names a published airspace designator, and covering is containment
+in that published hierarchy: a credential for a designator admits that
+designator and those beneath it. `default_sector_covers` implements it as
+exact match or dotted-prefix containment, and `sector_covers` remains the hook
+for a deployment whose designators are not dotted.
 
-  * PERMITTED_ROLES is a list and the paper does not give its separator or
-    whether a bare family permits its subtypes. This module uses commas, and
-    requires an exact match: a credential must list CC:CLEARANCE to permit a
-    clearance, and listing CC permits nothing. The conservative reading,
-    since CC:CONTACT is what nominates a successor station.
-  * "the SECTOR of the credential must cover the airspace the aircraft
-    reports" leaves covering to the deployment. `sector_covers` is the hook;
-    the default is exact match or a dotted-prefix containment.
+"The airspace at issue" in step 4 has a definite meaning in each direction.
+At an aircraft receiving KEYACK it is the airspace the station claims to be
+working, which the message states. At a ground station receiving an
+operational message it is the airspace the aircraft reports being in, checked
+against the station's own grant. Step 4 does not apply to a KEY: an aircraft's
+credential carries no SECTOR, because an aircraft asserts no airspace.
 """
 
 from __future__ import annotations
@@ -224,9 +233,13 @@ def default_sector_covers(credential_sector: str, airspace: str) -> bool:
     """
     Whether a credential's SECTOR covers the airspace at issue.
 
-    Exact match, or dotted-prefix containment so that an issuer can delegate a
-    region and its subdivisions: "EBBU" covers "EBBU.NORTH". Deployments with
-    real airspace boundaries pass their own function to `verify`.
+    Containment in the published airspace hierarchy, as Section 3.3.2 now
+    defines it: exact match, or dotted-prefix containment, so that an issuer
+    can grant a region and its subdivisions and "EBBU" covers "EBBU.NORTH".
+    A deployment whose published designators are not dotted passes its own
+    function to `verify`; what it must not do is leave covering undecided,
+    since two implementations disagreeing about it would disagree about who
+    may issue a clearance.
     """
     if credential_sector == airspace:
         return True

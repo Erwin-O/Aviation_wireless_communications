@@ -199,7 +199,7 @@ shown. Nothing in the protocol sees the shortened form.
 | Role | Direction | Carries |
 |---|---|---|
 | `KEY` | aircraft → station | credential, ephemeral public value, signature |
-| `KEYACK` | station → aircraft | the same, from the station |
+| `KEYACK` | station → aircraft | the same, from the station, plus `AIRSPACE`, the airspace it is working |
 | `KEYCONFIRM` | aircraft → station | transcript hash, tag under the session key |
 | `SA` | aircraft → station | position, altitude and reference, speed, heading, `LAST_EXEC`, `CHALLENGE` |
 | `CC:REQUEST` | aircraft → station | a request |
@@ -224,7 +224,8 @@ Every refusal names its check. The ones you are most likely to see:
 | `timestamp_window` | outside Δt_max of the receiver's clock |
 | `session_state` | a command sent to an aircraft in handover |
 | `role_not_permitted` | the sender's credential does not list that role |
-| `sector` | the station is not credentialled for the airspace reported |
+| `sector` | a station claimed airspace beyond its credential, or is not credentialled for the airspace reported |
+| `airspace` | the station's claim does not contain where the aircraft is |
 | `issuer_signature` | the credential was not signed by a trusted issuer |
 
 A handful of `challenge` discards in a fast replay is normal and is the

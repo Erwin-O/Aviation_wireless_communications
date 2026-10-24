@@ -48,6 +48,20 @@ def ground(ca, identity="EBBR GND", sector="EBBU", **kw):
     return H.Responder(**party(ca, identity, GROUND_ROLES, sector=sector, **kw))
 
 
+class _OverclaimingStation(H.Responder):
+    """
+    A station that states more airspace than its credential grants.
+
+    Reaching this through the public interface is impossible, because
+    `build_keyack` refuses it. The subclass exists to produce a correctly
+    signed KEYACK carrying an over-broad claim, which is what an aircraft has
+    to refuse on its own.
+    """
+
+    def _claimed_airspace(self) -> str:
+        return "EDGG"
+
+
 def run(ac, gs, now=NOW, airspace=None):
     """Drive a full exchange, returning both sides' sessions."""
     m1 = ac.build_key(gs.identity, now)
@@ -72,6 +86,16 @@ class TestPositivePath(unittest.TestCase):
     def test_both_sides_agree_on_the_transcript(self):
         a, g, _ = run(self.ac, self.gs)
         self.assertEqual(a.transcript, g.transcript)
+
+    def test_both_sides_agree_on_the_claimed_airspace(self):
+        """
+        The claim is in the KEYACK body, which the transcript of equation (5)
+        covers, so completing the handshake means the parties agreed on the
+        airspace and not merely on the key.
+        """
+        a, g, _ = run(self.ac, self.gs)
+        self.assertEqual(a.airspace, "EBBU")
+        self.assertEqual(g.airspace, a.airspace)
 
     def test_each_side_learns_the_other_identity_from_the_credential(self):
         a, g, _ = run(self.ac, self.gs)
@@ -194,17 +218,94 @@ class TestRefusals(unittest.TestCase):
         m1b = m1b.replace(eph.encode(), forged.encode())
         self._rejects(Step.MESSAGE_SIGNATURE, self.gs.handle_key, m1b, NOW)
 
-    def test_station_outside_its_sector(self):
+    # -- the airspace claim -------------------------------------------
+    #
+    # Two checks, different in kind. SECTOR is unconditional: the airspace a
+    # station claims to be working must lie within the SECTOR its issuer
+    # granted, and an aircraft establishes that from the message alone.
+    # AIRSPACE is advisory: an aircraft holding published airspace data also
+    # requires that the claim contain where it is.
+
+    def test_keyack_states_the_airspace_the_station_works(self):
         m1 = self.ac.build_key(self.gs.identity, NOW)
         self.gs.handle_key(m1, NOW)
         m2 = self.gs.build_keyack(NOW)
-        self._rejects(Step.SECTOR, self.ac.handle_keyack, m2, NOW, "EDGG")
+        self.assertEqual(
+            encoding.require(encoding.parse(m2), H.AIRSPACE), "EBBU")
 
-    def test_station_inside_its_sector_is_accepted(self):
+    def test_a_claim_beyond_the_grant_is_refused_without_any_airspace_data(self):
+        """The property the design exists for: no equipage, still checked."""
+        gs = _OverclaimingStation(
+            **party(self.ca, "EBBR GND", GROUND_ROLES, sector="EBBU"))
+        m1 = self.ac.build_key(gs.identity, NOW)
+        gs.handle_key(m1, NOW)
+        m2 = gs.build_keyack(NOW)
+        self._rejects(Step.SECTOR, self.ac.handle_keyack, m2, NOW)
+
+    def test_a_station_asked_to_claim_beyond_its_grant_refuses_to_answer(self):
+        gs = H.Responder(airspace="EBBU",
+                         **party(self.ca, "EBBR GND", GROUND_ROLES,
+                                 sector="EBBU.NORTH"))
+        m1 = self.ac.build_key(gs.identity, NOW)
+        gs.handle_key(m1, NOW)
+        self._rejects(Step.SECTOR, gs.build_keyack, NOW)
+
+    def test_a_station_may_claim_less_than_its_grant(self):
+        gs = ground(self.ca, sector="EBBU")
+        gs.airspace = "EBBU.NORTH"
+        m1 = self.ac.build_key(gs.identity, NOW)
+        gs.handle_key(m1, NOW)
+        m2 = gs.build_keyack(NOW)
+        self.assertEqual(
+            encoding.require(encoding.parse(m2), H.AIRSPACE), "EBBU.NORTH")
+        self.ac.handle_keyack(m2, NOW, airspace="EBBU.NORTH.LOW")
+
+    def test_a_claim_not_containing_the_aircraft_is_refused_where_it_can_tell(self):
+        m1 = self.ac.build_key(self.gs.identity, NOW)
+        self.gs.handle_key(m1, NOW)
+        m2 = self.gs.build_keyack(NOW)
+        self._rejects(Step.AIRSPACE, self.ac.handle_keyack, m2, NOW, "EDGG")
+
+    def test_the_advisory_check_is_not_made_without_airspace_data(self):
+        """An aircraft that cannot place itself does not refuse on that."""
+        m1 = self.ac.build_key(self.gs.identity, NOW)
+        self.gs.handle_key(m1, NOW)
+        m2 = self.gs.build_keyack(NOW)
+        self.ac.handle_keyack(m2, NOW)  # no airspace argument
+
+    def test_a_claim_containing_the_aircraft_is_accepted(self):
         m1 = self.ac.build_key(self.gs.identity, NOW)
         self.gs.handle_key(m1, NOW)
         m2 = self.gs.build_keyack(NOW)
         self.ac.handle_keyack(m2, NOW, airspace="EBBU.NORTH")
+
+    def test_keyack_without_a_claim_is_malformed(self):
+        m1 = self.ac.build_key(self.gs.identity, NOW)
+        self.gs.handle_key(m1, NOW)
+        m2 = self.gs.build_keyack(NOW)
+        stripped = m2.replace(b"AIRSPACE: EBBU\r\n", b"")
+        self._rejects(Step.MALFORMED, self.ac.handle_keyack, stripped, NOW)
+
+    def test_a_claim_widened_in_transit_is_refused_before_the_signature(self):
+        """
+        Step 4 precedes step 5, so a claim altered to exceed the grant costs
+        the receiver no signature verification. Both paths close; they close
+        at different steps, and which step matters.
+        """
+        m1 = self.ac.build_key(self.gs.identity, NOW)
+        self.gs.handle_key(m1, NOW)
+        m2 = self.gs.build_keyack(NOW)
+        forged = m2.replace(b"AIRSPACE: EBBU\r\n", b"AIRSPACE: EDGG\r\n")
+        self.assertNotEqual(forged, m2)
+        self._rejects(Step.SECTOR, self.ac.handle_keyack, forged, NOW)
+
+    def test_a_claim_narrowed_in_transit_fails_the_message_signature(self):
+        m1 = self.ac.build_key(self.gs.identity, NOW)
+        self.gs.handle_key(m1, NOW)
+        m2 = self.gs.build_keyack(NOW)
+        forged = m2.replace(b"AIRSPACE: EBBU\r\n", b"AIRSPACE: EBBU.SOUTH\r\n")
+        self.assertNotEqual(forged, m2)
+        self._rejects(Step.MESSAGE_SIGNATURE, self.ac.handle_keyack, forged, NOW)
 
     def test_keyconfirm_under_the_wrong_key_fails_the_tag(self):
         m1 = self.ac.build_key(self.gs.identity, NOW)

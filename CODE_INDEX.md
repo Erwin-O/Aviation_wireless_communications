@@ -21,7 +21,7 @@ this one replaced it. It remains in the git history at the tag
 aircraft                     broker                    ground station
   |                         (untrusted)                       |
   |---- KEY ----------------------->---------------------------|
-  |<--- KEYACK ---------------------<---------------------------|
+  |<--- KEYACK (carries AIRSPACE) --<---------------------------|
   |---- KEYCONFIRM ----------------->---------------------------|   established
   |---- SA (LAST_EXEC, CHALLENGE) -->---------------------------|
   |<--- CC:CLEARANCE (IN_REPLY_TO) --<---------------------------|
@@ -82,12 +82,15 @@ station, `SECTOR`.
 - `issue(...)` — build and sign.
 - `parse(raw)` → `Credential`.
 - `verify(...)` — runs the order §3.3.2 specifies: issuer signature against a
-  trust anchor, validity interval, subject against `FROM`, sector scope, and
-  only then the message signature. Raises `Rejected` naming the step.
+  trust anchor, validity interval, subject against `FROM`, sector scope where
+  the credential carries a `SECTOR`, and only then the message signature.
+  Raises `Rejected` naming the step.
 - `Credential.permits(role)` — exact match; a credential listing `CC` permits
   no subtype.
-- `default_sector_covers` — exact match or dotted-prefix containment
-  (`EBBU` covers `EBBU.NORTH`). Deployments pass their own.
+- `default_sector_covers` — containment in the published airspace hierarchy,
+  as §3.3.2 now defines it: exact match or dotted-prefix containment, so
+  `EBBU` covers `EBBU.NORTH`. A deployment whose designators are not dotted
+  passes its own function; what it may not do is leave covering undecided.
 
 ### [`protocol/rejection.py`](protocol/rejection.py) — 60 lines
 
@@ -96,7 +99,7 @@ check refused it.
 
 `Step`: `malformed`, `role_unknown`, `addressee`, `timestamp_window`,
 `credential_malformed`, `issuer_unknown`, `issuer_signature`, `validity`,
-`subject`, `sector`, `message_signature`, `transcript`, `session_unknown`,
+`subject`, `sector`, `airspace`, `message_signature`, `transcript`, `session_unknown`,
 `tag`, `challenge`, `role_not_permitted`, `session_state`, `alt_ref`.
 
 `Rejected(step, detail)` is raised everywhere a message is discarded.

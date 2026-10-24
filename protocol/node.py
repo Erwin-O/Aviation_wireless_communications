@@ -236,7 +236,9 @@ class Station:
         return self._operational(msg, now)
 
     def _key(self, raw: bytes, sender: str, now: datetime) -> list[Outbound]:
-        resp = H.Responder(window=self.window,
+        # `sector` is the airspace this station works: claimed in KEYACK, and
+        # the same quantity against which a reported position is admitted.
+        resp = H.Responder(window=self.window, airspace=self.sector,
                            **self.identity.endpoint_kwargs(self.trust_anchors))
         resp.handle_key(raw, now)
         wire = resp.build_keyack(now)

@@ -51,7 +51,8 @@ and are unrelated to the goal labels `G1` and `G2` used in the paper.
 
 Four of the thirteen goals are established by argument rather than in
 ProVerif: G8 unknown key-share resistance, G9 resilience to weak randomness,
-G12 authorisation and G13 exclusive ground-station control. Section 4.1 of
+G12 authorisation, which includes the airspace a ground station claims, and
+G13 exclusive ground-station control. Section 4.1 of
 the paper gives those arguments and says why each lies outside what a
 symbolic model represents.
 

@@ -2,12 +2,30 @@
 The three-message session establishment (paper, Section 3.3.2).
 
     aircraft  -- KEY -------->  ground station     credential + ephemeral, signed
-    aircraft  <-- KEYACK -----  ground station     credential + ephemeral, signed
+    aircraft  <-- KEYACK -----  ground station     the same, plus the airspace claimed
     aircraft  -- KEYCONFIRM ->  ground station     transcript, tagged under K_sess
 
 Two messages would suffice to agree a key. The third exists to confirm it, and
 because the transcript covers both preceding bodies the parties agree on the
 whole exchange rather than merely on the key.
+
+THE AIRSPACE CLAIM. A ground station's credential bounds the airspace its
+issuer authorised it to control. KEYACK states which airspace the station is
+actually working, and the claim must lie within that bound. Every aircraft
+checks this, and needs nothing of its own to do it: the authorisation and the
+claim are both in the message in front of it, inside the signed body, and the
+transcript of equation (5) covers them, so KEYCONFIRM means the two parties
+agreed on the claimed airspace and not merely on the key.
+
+An aircraft that holds current published airspace data makes a second
+comparison, that the claim contains where the aircraft actually is. That one
+is advisory: requiring it would oblige every aircraft to carry airspace data
+and so reintroduce the equipage dependency this design exists to avoid. And
+it is advisory in the only sense that matters operationally, which is that
+the aircraft decides. A claim an aircraft does not like is answered by not
+sending KEYCONFIRM, and by contacting someone else. The protocol's part is to
+make the ground station's claim verifiable; the choice of whom to work
+remains with the aircraft throughout.
 
 This module carries no session state beyond one handshake in flight. What the
 endpoints retain afterwards -- pending, established, handover -- belongs to
@@ -42,6 +60,9 @@ HANDSHAKE_ROLES = (ROLE_KEY, ROLE_KEYACK, ROLE_KEYCONFIRM)
 SIGNATURE = "SIGNATURE"
 MAC = "MAC"
 
+#: The airspace a ground station claims to be working, stated in KEYACK.
+AIRSPACE = "AIRSPACE"
+
 #: Acceptance window, Delta t_max (Section 3.3.1).
 #:
 #: OPEN POINT: the paper names Delta t_max and gives no value. Two minutes is
@@ -59,6 +80,8 @@ class Session:
     peer_credential: credentials.Credential
     key: bytes
     transcript: bytes
+    #: The airspace claimed in this session's KEYACK, covered by `transcript`.
+    airspace: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +197,7 @@ class Initiator(Endpoint):
     _peer: str | None = field(default=None, repr=False)
     _key: bytes | None = field(default=None, repr=False)
     _peer_credential: credentials.Credential | None = field(default=None, repr=False)
+    _peer_airspace: str | None = field(default=None, repr=False)
 
     def build_key(self, to: str, now: datetime) -> bytes:
         """KEY: credential and ephemeral public value, signed."""
@@ -195,24 +219,43 @@ class Initiator(Endpoint):
         """
         Verify KEYACK and derive the session key.
 
-        `airspace` is optional: an aircraft may compare the station's sector
-        against its own position where it holds the means, but admission does
-        not depend on it (Section 3.3.3).
+        Two checks concern airspace and they differ in kind. The station's
+        claim must lie within the SECTOR of its credential: that is step four
+        of Section 3.3.2, it is made by every aircraft, and the message
+        carries everything it needs. `airspace`, where given, is where the
+        aircraft itself is, from data loaded before the flight; the claim must
+        contain it. That one is advisory and admission does not depend on it.
+
+        The advisory check runs after the message signature, so no claim is
+        weighed before it is known to be authentic.
         """
         fields = _common(raw, expect_role=ROLE_KEYACK, expect_to=self.identity,
                          now=now, window=self.window)
         region, sig = _signed_body(raw, fields)
+        try:
+            claim = encoding.require(fields, AIRSPACE)
+        except encoding.EncodingError as exc:
+            raise Rejected(Step.MALFORMED, str(exc)) from exc
+
         cred = credentials.verify(
             _credential_of(fields),
             trust_anchors=self.trust_anchors,
             now=now,
             expect_subject=encoding.require(fields, "FROM"),
-            airspace=airspace,
+            airspace=claim,
             signed_message=region,
             message_signature=sig,
         )
+
+        if airspace is not None and not credentials.default_sector_covers(
+                claim, airspace):
+            raise Rejected(
+                Step.AIRSPACE,
+                f"{cred.subject} claims {claim}, which does not contain {airspace}")
+
         self._peer = cred.subject
         self._peer_credential = cred
+        self._peer_airspace = claim
         self._key = self._agree(_ephemeral_of(fields))
         self._m_keyack = region
 
@@ -236,6 +279,7 @@ class Initiator(Endpoint):
             peer_credential=self._peer_credential,
             key=self._key,
             transcript=h,
+            airspace=self._peer_airspace,
         )
         return wire, session
 
@@ -244,16 +288,27 @@ class Initiator(Endpoint):
 class Responder(Endpoint):
     """The ground station side."""
 
+    #: The airspace this station is working and will claim in KEYACK. None
+    #: claims exactly what the credential grants.
+    airspace: str | None = None
+
     _m_key: bytes | None = field(default=None, repr=False)
     _m_keyack: bytes | None = field(default=None, repr=False)
     _peer: str | None = field(default=None, repr=False)
     _peer_ephemeral: bytes | None = field(default=None, repr=False)
     _key: bytes | None = field(default=None, repr=False)
     _peer_credential: credentials.Credential | None = field(default=None, repr=False)
+    _claim: str | None = field(default=None, repr=False)
 
-    def handle_key(self, raw: bytes, now: datetime,
-                   airspace: str | None = None) -> None:
-        """Verify KEY in the order of Section 3.3.2."""
+    def handle_key(self, raw: bytes, now: datetime) -> None:
+        """
+        Verify KEY in the order of Section 3.3.2.
+
+        Step four, the sector scope, does not apply here: an aircraft's
+        credential carries no SECTOR, because an aircraft asserts no airspace.
+        The step applies to a ground station's credential, which is what the
+        aircraft checks when KEYACK reaches it.
+        """
         fields = _common(raw, expect_role=ROLE_KEY, expect_to=self.identity,
                          now=now, window=self.window)
         region, sig = _signed_body(raw, fields)
@@ -262,7 +317,6 @@ class Responder(Endpoint):
             trust_anchors=self.trust_anchors,
             now=now,
             expect_subject=encoding.require(fields, "FROM"),
-            airspace=airspace,
             signed_message=region,
             message_signature=sig,
         )
@@ -271,10 +325,36 @@ class Responder(Endpoint):
         self._peer_ephemeral = _ephemeral_of(fields)
         self._m_key = region
 
+    def _claimed_airspace(self) -> str:
+        """
+        The airspace to claim, checked against this station's own grant.
+
+        A station cannot claim more than its issuer authorised, and the place
+        to stop that is here, before the message exists. A station whose
+        configuration asks for more than its credential carries refuses to
+        answer at all rather than emitting a claim every aircraft will refuse.
+        """
+        granted = credentials.parse(self.credential).sector
+        if granted is None:
+            raise Rejected(Step.SECTOR,
+                           "this station's credential carries no SECTOR")
+        claim = self.airspace or granted
+        if not credentials.default_sector_covers(granted, claim):
+            raise Rejected(
+                Step.SECTOR,
+                f"claim {claim} exceeds the grant {granted} in this credential")
+        return claim
+
     def build_keyack(self, now: datetime) -> bytes:
-        """KEYACK, after which the station holds the session pending."""
+        """
+        KEYACK, after which the station holds the session pending.
+
+        The body states the airspace this station is working, bounded by the
+        SECTOR of its own credential.
+        """
         if self._m_key is None:
             raise Rejected(Step.MALFORMED, "no KEY processed")
+        self._claim = self._claimed_airspace()
         body = encoding.encode([
             ("ROLE", ROLE_KEYACK),
             ("TIMESTAMP", _iso(now)),
@@ -282,6 +362,7 @@ class Responder(Endpoint):
             ("TO", self._peer),
             ("CREDENTIAL", primitives.b64u(self.credential)),
             ("EPHEMERAL_KEY", primitives.b64u(self._fresh_ephemeral())),
+            (AIRSPACE, self._claim),
         ])
         self._m_keyack = body
         self._key = self._agree(self._peer_ephemeral)
@@ -319,6 +400,7 @@ class Responder(Endpoint):
             peer_credential=self._peer_credential,
             key=self._key,
             transcript=expected,
+            airspace=self._claim,
         )
 
 
