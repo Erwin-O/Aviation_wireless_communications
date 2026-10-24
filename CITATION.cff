@@ -30,30 +30,12 @@ keywords:
   - Ascon
   - critical infrastructure protection
   - unmanned aerial systems
+# This software was written by Erwin Orye alone. The paper it implements has
+# four authors; they are listed under preferred-citation below.
 authors:
   - family-names: Orye
     given-names: Erwin
     email: erwin@orye.eu
-    affiliation: >-
-      Centre for Digital Forensics and Cyber Security, Tallinn University of
-      Technology, Tallinn, Estonia
-  - family-names: Lafitte
-    given-names: Frédéric
-    email: frederic.lafitte@mil.be
-    affiliation: >-
-      Department of Mathematics, Royal Military Academy, Brussels, Belgium
-  - family-names: Maennel
-    given-names: Olaf
-    email: olaf.maennel@adelaide.edu.au
-    affiliation: >-
-      School of Computer and Mathematical Sciences, The University of
-      Adelaide, Adelaide, Australia
-  - family-names: Venables
-    given-names: Adrian
-    email: adrian.venables@taltech.ee
-    affiliation: >-
-      Centre for Digital Forensics and Cyber Security, Tallinn University of
-      Technology, Tallinn, Estonia
 preferred-citation:
   type: article
   title: >-
