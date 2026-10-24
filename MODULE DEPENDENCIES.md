@@ -117,7 +117,7 @@ scripts/scenario_player.py        scripts/demo_subscriber.py
    ├── core.registry                 ├── core.registry
    ├── encryption.crypto             ├── encryption.crypto
    ├── utils.station_norm            ├── config.station_keys
-   ├── utils.regnorm                 ├── core.logger
+   ├── core.logger                   ├── core.logger
    ├── core.logger                   └── mqtt_client
    └── mqtt_client
 ```
