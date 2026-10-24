@@ -8,15 +8,15 @@
 > `../NOTICE`.
 
 The formal models behind the security analysis, in the symbolic (Dolev–Yao)
-model. They are the models printed in Appendices B, C and D of the IJCIP
+model. They are the models printed in the last three appendices of the IJCIP
 paper, reproduced here verbatim so the repository carries what the paper
 prints.
 
 | File | Establishes | Paper |
 |---|---|---|
-| `model_aka.pv` | G1 aircraft authentication, G2 ground-station authentication, G6 KCI resistance, G7 explicit key confirmation | Appendix B |
-| `model_keys.pv` | G3 session-key secrecy, G4 session-key independence, G5 perfect forward secrecy | Appendix C |
-| `model_cmd.pv` | G10 replay resistance, G11 in-order command execution | Appendix D |
+| `model_aka.pv` | G1 aircraft authentication, G2 ground-station authentication, G6 KCI resistance, G7 explicit key confirmation | the AKA model appendix |
+| `model_keys.pv` | G3 session-key secrecy, G4 session-key independence, G5 perfect forward secrecy | the key-secrecy model appendix |
+| `model_cmd.pv` | G10 replay resistance, G11 in-order command execution | the command model appendix |
 
 ## Running them
 
