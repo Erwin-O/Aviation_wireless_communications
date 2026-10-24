@@ -1,5 +1,12 @@
 # ProVerif models
 
+> **Authorship.** The three models in this directory are the work of
+> Frederic Lafitte. They are included here with his permission, so that a
+> reader can run what the paper prints in its appendices. They are formal
+> models, not part of the implementation, and nothing in the implementation
+> depends on them. The rest of this repository is Erwin Orye's work. See
+> `../NOTICE`.
+
 The formal models behind the security analysis, in the symbolic (Dolev–Yao)
 model. They are the models printed in Appendices B, C and D of the IJCIP
 paper, reproduced here verbatim so the repository carries what the paper

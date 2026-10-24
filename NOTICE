@@ -3,6 +3,9 @@ Reference implementation
 
 Copyright 2026 Erwin Orye
 
+This software was written by Erwin Orye in his own time. It is not a work of
+any employer, and no employer or institution is a copyright holder in it.
+
 Licensed under the Apache License, Version 2.0 (the "License"); you may not
 use this file except in compliance with the License. You may obtain a copy
 of the License in the file LICENSE in the root of this repository, or at
@@ -16,8 +19,16 @@ License for the specific language governing permissions and limitations
 under the License.
 
 --------------------------------------------------------------------------
-Third-party material included in this repository
+Material in this repository by other hands
 --------------------------------------------------------------------------
+
+proverif/
+    The three ProVerif models are the work of Frederic Lafitte and are
+    included here with his permission. They are the models printed in
+    Appendices B, C and D of the accompanying paper, carried in this
+    repository so that a reader can run what the paper prints. They are
+    formal models rather than part of the implementation, and nothing in the
+    implementation depends on them.
 
 encryption/ascon.py
     pyascon, the Python reference implementation of Ascon by Maria

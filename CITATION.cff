@@ -32,6 +32,9 @@ keywords:
   - unmanned aerial systems
 # This software was written by Erwin Orye alone. The paper it implements has
 # four authors; they are listed under preferred-citation below.
+# The ProVerif models carried in proverif/ are Frederic Lafitte's work, are
+# credited in NOTICE and proverif/README.md, and are not part of the
+# implementation.
 authors:
   - family-names: Orye
     given-names: Erwin

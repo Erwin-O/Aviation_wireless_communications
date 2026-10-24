@@ -142,6 +142,13 @@ code, cite a release.
 
 Apache-2.0. See `LICENSE`.
 
-`encryption/ascon.py` is Maria Eichlseder's pyascon reference implementation,
-released under CC0 1.0. CC0 requires no attribution; `NOTICE` records it
-anyway, because the cryptographic core of this work is hers.
+The implementation is the work of one author, written in his own time. Two
+things in the tree are not his, and `NOTICE` records both:
+
+- `proverif/` holds the three formal models printed in the paper's
+  appendices. They are Frederic Lafitte's work, included with his
+  permission. Nothing in the implementation depends on them.
+- `encryption/ascon.py` is Maria Eichlseder's pyascon reference
+  implementation, released under CC0 1.0. CC0 requires no attribution;
+  `NOTICE` credits it anyway, because the cryptographic core of this work
+  is hers.
