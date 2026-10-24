@@ -174,10 +174,14 @@ def verify(
     """
     Run the verification order of Section 3.3.2 and return the credential.
 
-    Steps 1 to 4 always run. Step 5, the message signature, runs when
-    `signed_message` and `message_signature` are given, which is the case for
-    KEY and KEYACK. The sector check (step 4) runs when `airspace` is given,
-    which is the case at a ground station.
+    Steps 1 to 3 always run. Step 4, the sector scope, runs wherever there is
+    an airspace at issue, which the caller supplies: at an aircraft receiving
+    KEYACK it is the airspace the station claims, and at a ground station
+    receiving an operational message it is the position the aircraft reported.
+    It does not run on a KEY, because an aircraft asserts no airspace. Where
+    it does run, a credential carrying no SECTOR fails it rather than skipping
+    it. Step 5, the message signature, runs when `signed_message` and
+    `message_signature` are given, which is the case for KEY and KEYACK.
 
     Raises CredentialRejected, whose `.step` names the step that failed.
     """

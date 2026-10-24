@@ -113,8 +113,20 @@ class TestPositivePath(unittest.TestCase):
             for name in ("ROLE", "TIMESTAMP", "FROM", "TO", "CREDENTIAL",
                          "EPHEMERAL_KEY", "SIGNATURE"):
                 self.assertIsNotNone(encoding.get(f, name), name)
+        self.assertIsNotNone(encoding.get(f2, H.AIRSPACE))
         self.assertIsNotNone(encoding.get(f3, "TRANSCRIPT"))
         self.assertIsNotNone(encoding.get(f3, "MAC"))
+
+    def test_keyack_carries_its_fields_in_the_specified_order(self):
+        """
+        Field order is part of what the signature covers, so the body the
+        paper specifies and the body built here must be the same sequence.
+        """
+        _, _, (_, m2, _) = run(self.ac, self.gs)
+        self.assertEqual(
+            [name for name, _ in encoding.parse(m2)],
+            ["ROLE", "TIMESTAMP", "FROM", "TO", "CREDENTIAL",
+             "EPHEMERAL_KEY", H.AIRSPACE, "SIGNATURE"])
 
     def test_no_session_identifier_appears_anywhere(self):
         """Section 3.3.2: the key distinguishes sessions, no field names them."""

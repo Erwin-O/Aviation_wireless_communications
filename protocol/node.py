@@ -199,6 +199,11 @@ class Aircraft:
 class Station:
     identity: I.Identity
     trust_anchors: dict[str, bytes]
+    #: The airspace this station works. It is both the grant it claims in
+    #: KEYACK and the entitlement a reported position is admitted against, so
+    #: this node collapses the two. `handshake.Responder` allows a claim
+    #: narrower than the grant; a deployment wanting that sets this to the
+    #: narrower designator, since the credential still bounds it.
     sector: str | None = None
     window: timedelta = H.DEFAULT_WINDOW
 

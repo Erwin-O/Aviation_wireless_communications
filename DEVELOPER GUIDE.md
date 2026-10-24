@@ -252,6 +252,15 @@ operational.receive(raw, table, now, local="EBBR GND", as_aircraft=False,
 Mapping a reported position to an airspace needs boundary data, so the caller
 does it and passes the result.
 
+**Nothing in this repository supplies that mapping.** `scripts/station.py`
+and `scripts/replay.py` call `handle(raw, now)` with no `airspace`, so the
+third row of the table above never fires in the demo: it is exercised by
+`tests/test_operational.py` and not by the scenarios. That is a gap in the
+demonstration, not in the implementation, and closing it honestly would need
+real airspace boundaries rather than a mapping derived from whichever station
+happens to be controlling, which would pass by construction and prove
+nothing.
+
 ---
 
 ## 6. Session establishment
