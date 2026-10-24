@@ -1,0 +1,125 @@
+
+type participant.
+type sessionkey.
+type nonce.
+
+free c: channel.
+free A1, A2, G1, G2: participant.
+free K1, K2: sessionkey [private].
+const zero: nonce.
+
+fun mac(bitstring, sessionkey): bitstring.
+reduc forall x:bitstring, y:sessionkey;
+  macvrfy( mac(x,y), y ) = x.
+
+(*                   self          peer        command     as sess id
+                       |             |           |		   |
+                       v             v           v     	  v    *)
+event execution1   (participant, participant, bitstring, sessionkey).
+event execution2   (participant, participant, bitstring, sessionkey).
+event execution3   (participant, participant, bitstring, sessionkey).
+event execution4   (participant, participant, bitstring, sessionkey).
+event execution5   (participant, participant, bitstring, sessionkey).
+event issueCommand (participant, participant, bitstring, sessionkey).
+  
+(* Replay resistance *)
+
+query x: participant, y: participant, z: bitstring, k:sessionkey;
+  inj-event(execution1(x,y,z,k)) ==>
+  inj-event(issueCommand(y,x,z,k)).
+
+query x: participant, y: participant, z: bitstring, k:sessionkey;
+  inj-event(execution2(x,y,z,k)) ==>
+  inj-event(issueCommand(y,x,z,k)).
+
+query x: participant, y: participant, z: bitstring, k:sessionkey;
+  inj-event(execution3(x,y,z,k)) ==>
+  inj-event(issueCommand(y,x,z,k)).
+
+query x: participant, y: participant, z: bitstring, k:sessionkey;
+  inj-event(execution4(x,y,z,k)) ==>
+  inj-event(issueCommand(y,x,z,k)).
+
+(* In-order execution *)
+
+query x: participant, y: participant, u: bitstring, v: bitstring, k:sessionkey;
+  event(execution2(x,y,u,k)) ==>
+  event(execution1(x,y,v,k)).
+
+query x: participant, y: participant, u: bitstring, v: bitstring, k:sessionkey;
+  event(execution3(x,y,u,k))  ==>
+  event(execution2(x,y,v,k)).
+
+query x: participant, y: participant, u: bitstring, v: bitstring, k:sessionkey;
+  event(execution4(x,y,u,k))  ==>
+  event(execution3(x,y,v,k)).
+
+
+let aircraft(A:participant, G: participant, K:sessionkey) =
+
+  let last_cmd = zero in
+
+  new next_cmd: nonce;
+  out(c, mac((last_cmd, next_cmd), K));
+  in(c, msg: bitstring);
+  let (=next_cmd, cmd: bitstring) = macvrfy(msg,K) in
+  event execution1(A, G, cmd, K);
+
+  let last_cmd = next_cmd in
+  
+  new next_cmd: nonce;
+  out(c, mac((last_cmd, next_cmd), K));
+  in(c, msg: bitstring);
+  let (=next_cmd, cmd: bitstring) = macvrfy(msg,K) in
+  event execution2(A, G, cmd, K);
+
+  let last_cmd = next_cmd in
+  
+  new next_cmd: nonce;
+  out(c, mac((last_cmd, next_cmd), K));
+  in(c, msg: bitstring);
+  let (=next_cmd, cmd: bitstring) = macvrfy(msg,K) in
+  event execution3(A, G, cmd, K);
+
+  let last_cmd = next_cmd in
+
+  new next_cmd: nonce;
+  out(c, mac((last_cmd, next_cmd), K));
+  in(c, msg: bitstring);
+  let (=next_cmd, cmd: bitstring) = macvrfy(msg,K) in
+  event execution4(A, G, cmd, K).
+
+
+let ground(G:participant, A:participant, K:sessionkey) =
+
+  new cmd1: bitstring;
+  new cmd2: bitstring;
+  new cmd3: bitstring;
+  new cmd4: bitstring;
+
+  in(c, msg: bitstring);
+  let (=zero, n1: nonce) = macvrfy(msg, K) in
+  event issueCommand(G, A, cmd1, K);
+  out(c, mac((n1, cmd1), K));
+
+  in(c, msg: bitstring);
+  let (=n1, n2: nonce) = macvrfy(msg, K) in
+  event issueCommand(G,A,cmd2, K);
+  out(c, mac((n2, cmd2),K));
+
+  in(c, msg: bitstring);
+  let (=n2, n3: nonce) = macvrfy(msg, K) in
+  event issueCommand(G,A,cmd3,K);
+  out(c, mac((n3, cmd3),K));
+
+  in(c, msg: bitstring);
+  let (=n3, n4: nonce) = macvrfy(msg, K) in
+  event issueCommand(G,A,cmd4, K);
+  out(c, mac((n4, cmd4),K)).
+
+
+process
+  aircraft(A1,G1,K1) | 
+  ground(G1,A1,K1)   |
+  aircraft(A2,G2,K2) | 
+  ground(G2,A2,K2)

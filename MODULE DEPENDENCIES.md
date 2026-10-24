@@ -6,7 +6,7 @@ complements `DEVELOPER GUIDE.md`, which explains the protocol, and
 
 > **Scope**
 >
-> * Modules present in the repository, conforming and legacy
+> * Modules present in the repository
 > * Imports, call-chains and shared resources
 > * Not: third-party internals
 
@@ -107,20 +107,6 @@ rejection.py                  no dependencies at all
 The graph is acyclic and the direction never reverses: `encoding.py` and
 `rejection.py` are the floor, `node.py` is the ceiling. A change that would
 make a lower module import a higher one is a design error, not a convenience.
-
-## 1.3 Legacy implementation
-
-```
-scripts/scenario_player.py        scripts/demo_subscriber.py
-   ├── core.messages                 ├── core.messages
-   ├── core.comm_state               ├── core.comm_state
-   ├── core.registry                 ├── core.registry
-   ├── encryption.crypto             ├── encryption.crypto
-   ├── utils.station_norm            ├── config.station_keys
-   ├── core.logger                   ├── core.logger
-   ├── core.logger                   └── mqtt_client
-   └── mqtt_client
-```
 
 ---
 
@@ -249,10 +235,9 @@ paths `ANCHORS_PATH` and `LOCAL_DIR`.
 
 **Used by** `aircraft.py`, `station.py`, `provision.py`, `replay.py`.
 
-**Notes** The only module that touches the filesystem. It replaces
-`core/registry.py`: a receiver holds issuer keys, not a directory of
-principals. Private key file names match the legacy ones, so existing
-material is reused.
+**Notes** The only module that touches the filesystem, and the one that
+carries the trust model: a receiver holds issuer keys, not a directory of
+principals. Existing key files are reused rather than replaced.
 
 ## 2.10 `protocol/mqtt_binding.py`
 
@@ -269,44 +254,18 @@ against the authenticated one and refuses a disagreement.
 
 ---
 
-# 3. Shared and legacy modules
+# 3. Supporting modules
 
 ## 3.1 `encryption/ascon.py`
 
 **Provides** `ascon_hash`, `ascon_mac`, `ascon_encrypt`, `ascon_decrypt`.
 
-**Used by** `protocol/primitives.py` and `encryption/crypto.py`.
+**Used by** `protocol/primitives.py`.
 
 **Notes** A reference implementation of NIST SP 800-232, vendored. Not
 modified by this project.
 
-## 3.2 `encryption/crypto.py` — legacy
-
-**Provides** Base64 helpers, `compute_mac` (Ascon-Mac), `verify_mac`,
-Ed25519 sign/verify, X25519 session-key wrap/unwrap.
-
-**Used by** `core/registry.py`, `config/station_keys.py`, and the legacy
-scripts.
-
-**Notes** BLAKE3, the `MAC_ALG` dispatch and the XOR-keystream `dec_hash`
-have been removed. The conforming implementation does not import this module
-at all.
-
-## 3.3 `core/messages.py`, `core/comm_state.py`, `core/registry.py` — legacy
-
-Superseded by `protocol/encoding.py`, `protocol/session.py` and
-`protocol/identity.py` respectively. Still used by the legacy scripts. Field
-names on the wire were corrected to `MAC` and `SIGNATURE`.
-
-## 3.4 `core/logger.py`
-
-**Provides** the structured logger (`WIRE`, `LIMITED`, `FULL`; `TXT`, `JSON`,
-`BOTH`).
-
-**Used by** the legacy scripts. The conforming scripts print to stdout and are
-captured by `tee` into `logs/<STATION>.log`.
-
-## 3.5 `mqtt_client.py`
+## 3.2 `mqtt_client.py`
 
 **Provides** `MQTTClient`: `connect`, `subscribe`, `publish`, `loop_start`,
 `loop_stop`, `set_handlers`, `is_connected`.
@@ -320,7 +279,7 @@ receive paho's own `(client, userdata, msg)`, and a `subscribe` issued before
 the CONNACK is dropped rather than queued, so subscriptions belong in
 `on_connect`.
 
-## 3.6 `settings.py`
+## 3.3 `settings.py`
 
 **Provides** broker host and port, topic base, logging configuration.
 
@@ -328,7 +287,7 @@ the CONNACK is dropped rather than queued, so subscriptions belong in
 no longer selectable: a protocol that names its primitives in one place has
 nothing to dispatch on.
 
-## 3.7 `scripts/_scenario.py`
+## 3.4 `scripts/_scenario.py`
 
 **Provides** `load_aircraft_script`, `load_station_script`,
 `stations_in_order`, `aircraft_id`, `canonical`.
@@ -341,7 +300,7 @@ nothing to dispatch on.
 ACK rows are dropped because the protocol produces both; CONTACT rows become
 nominations issued by whichever station held the aircraft at that moment.
 
-## 3.8 `scripts/_display.py`
+## 3.5 `scripts/_display.py`
 
 **Provides** `render`, `banner`.
 
@@ -356,13 +315,12 @@ nominations issued by whichever station held the aircraft at that moment.
 | Resource | Written by | Read by |
 |---|---|---|
 | `config/trust_anchors.json` | `provision.py` | every conforming node |
-| `~/AviationLocalKeys/<ACTOR>/` | `provision.py`, `add_actor.py` | `identity.load_identity`, `core/registry.py` |
-| `config/publicKeys.json` | `add_actor.py` | legacy scripts only |
+| `~/AviationLocalKeys/<ACTOR>/` | `provision.py` | `identity.load_identity` |
 | `logs/pids/*.pid` | `aircraft.py`, `station.py` | `stop_all_listeners.sh` |
 | `logs/pids/mqtt_recorder.pid` | `run_demo.sh` | `stop_demo.sh` |
 | `logs/<STATION>.log` | `tee` in the launchers | people |
 | `logs/scenario_log.json` | `mqtt_recorder.py` | `visualise_flight.py` |
-| `scenarios/*.json` | `build_scenario_from_tables.py` | `_scenario.py`, legacy player |
+| `scenarios/*.json` | `build_scenario_from_tables.py` | `_scenario.py` |
 
 The PID files are the contract between the launchers and the stop script.
 They exist because killing by command-line pattern is unsafe: a shell whose

@@ -117,7 +117,6 @@ times real time.
 | `--no-provision` | do not reissue credentials |
 | `--foreground` | run the aircraft in this shell instead of its own window |
 | `--no-listeners`, `--no-tile` | skip the windows or the tiling |
-| `--legacy` | run the earlier prototype instead |
 
 Scenarios: `commercial_flight_EBBR-EDDF.json` (OOABC, Brussels to Frankfurt,
 seven stations) and `flight_EHAM_EDDM_PHAEX.json` (PHAEX, Amsterdam to

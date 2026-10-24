@@ -2,7 +2,8 @@
 """
 build_scenario_from_tables.py
 
-Build a scenario JSON (used by scripts/scenario_player.py) from two CSV files:
+Build a scenario JSON (used by scripts/aircraft.py and scripts/station.py)
+from two CSV files:
   - a Situational Awareness (SA) table (position reports)
   - a Command & Control (CC) table (ATC instructions/requests/acks/etc.)
 
@@ -29,7 +30,7 @@ Notes:
     Time,From,To,Type,Body
     e.g. "10:43:10","LANGEN","OOABC","INSTRUCTION","CONTACT EDDF APPR"
 
-- Output JSON format matches scenario_player.py expectations:
+- Output JSON format matches what scripts/_scenario.py reads:
     {
       "flight": { "aircraft_id": "...", "initial_station": "...", ... },
       "events": [
@@ -39,7 +40,7 @@ Notes:
       ]
     }
 
-If scenario_player.py throws KeyError: 'flight', it means the JSON does not contain
+If loading throws KeyError: 'flight', it means the JSON does not contain
 the expected top-level "flight" object. This script always writes it.
 """
 

@@ -12,13 +12,9 @@
 # Matching is how this script used to work and it is not safe: a shell whose
 # command line happens to mention the script matches it too.
 #
-# The legacy listener (scripts/demo_subscriber.py) writes no PID file, so it
-# is still matched by name, exactly as before.
-#
 
 REPO="$(cd "$(dirname "$(realpath "$0")")/.." && pwd)"
 PID_DIR="$REPO/logs/pids"
-LEGACY_PATTERN="scripts/demo_subscriber\.py"
 
 echo "Stopping demo processes…"
 
@@ -40,13 +36,6 @@ if [ -d "$PID_DIR" ]; then
     fi
   done
 fi
-
-# Plus anything from the legacy demo
-LEGACY=$(pgrep -f "$LEGACY_PATTERN" || true)
-for pid in $LEGACY; do
-  ps -p "$pid" -o pid=,command= | cut -c1-100
-  PIDS="$PIDS $pid"
-done
 
 if [ -z "$(echo "$PIDS" | tr -d '[:space:]')" ]; then
   echo "  none running."

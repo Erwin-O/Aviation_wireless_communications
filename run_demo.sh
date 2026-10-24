@@ -15,11 +15,6 @@ RECORD=1
 SCENARIO=""
 DEBUG_SCENARIO=1
 
-# "protocol" runs the specification of Section 3.3: scripts/station.py and
-# scripts/aircraft.py, credentials, the three-message handshake and the
-# challenge exchange. "legacy" runs the earlier demo_subscriber.py and
-# scenario_player.py, kept until the old scripts are retired.
-MODE="protocol"
 SPEED="1.0"
 PROVISION=1
 VERBOSE=0
@@ -54,9 +49,8 @@ Options:
   --no-record            Explicitly do not start mqtt_recorder (default)
 
   --scenario <path>      Fly this scenario
-  --debug-scenario        Pass --debug to the aircraft/player
+  --debug-scenario        Pass --debug to the aircraft
 
-  --legacy               Run the pre-conformance scripts instead
   --speed <factor>       Scenario speed multiplier (default: 1.0)
   --verbose              Print every message, field by field, everywhere
   --no-provision         Do not reissue credentials before starting
@@ -91,7 +85,7 @@ ensure_dirs() {
 }
 
 provision() {
-  if [[ "$MODE" != "protocol" || "$PROVISION" -eq 0 ]]; then
+  if [[ "$PROVISION" -eq 0 ]]; then
     return
   fi
   info "Issuing credentials (scripts/provision.py)"
@@ -109,7 +103,6 @@ start_listeners() {
   fi
 
   local launcher="./visualisation/launch_all_stations.sh"
-  [[ "$MODE" == "legacy" ]] && launcher="./visualisation/launch_all_listeners.sh"
 
   if [[ -x "$launcher" ]]; then
     info "Launching stations via $launcher"
@@ -147,7 +140,7 @@ start_listeners() {
 
   # The aircraft is not a station, but it belongs in the tiled view: open its
   # window before tiling so it is laid out with the rest.
-  if [[ "$MODE" == "protocol" && "$AIRCRAFT_WINDOW" -eq 1 && -n "$SCENARIO" ]]; then
+  if [[ "$AIRCRAFT_WINDOW" -eq 1 && -n "$SCENARIO" ]]; then
     if [[ -x "./visualisation/launch_aircraft.sh" ]]; then
       info "Launching the aircraft in its own window"
       SPEED="$SPEED" VERBOSE="$VERBOSE" MQTT_HOST="$HOST" MQTT_PORT="$PORT" \
@@ -210,23 +203,13 @@ start_recorder() {
 
 start_scenario() {
   if [[ -z "$SCENARIO" ]]; then
-    info "No scenario specified; not starting scenario_player."
+    info "No scenario specified; nothing to fly."
     return
   fi
 
   if [[ ! -f "$SCENARIO" ]]; then
     warn "Scenario file not found: $SCENARIO"
     warn "Skipping scenario start."
-    return
-  fi
-
-  if [[ "$MODE" == "legacy" ]]; then
-    info "Starting scenario_player (legacy): $SCENARIO"
-    if [[ "$DEBUG_SCENARIO" -eq 1 ]]; then
-      python3 scripts/scenario_player.py --publish "$SCENARIO" --debug
-    else
-      python3 scripts/scenario_player.py --publish "$SCENARIO"
-    fi
     return
   fi
 
@@ -259,7 +242,6 @@ while [[ $# -gt 0 ]]; do
     --no-listeners) LAUNCH_LISTENERS=0; shift ;;
     --no-tile) TILE=0; shift ;;
 
-    --legacy) MODE="legacy"; shift ;;
     --speed) SPEED="$2"; shift 2 ;;
     --verbose) VERBOSE=1; shift ;;
     --no-provision) PROVISION=0; shift ;;

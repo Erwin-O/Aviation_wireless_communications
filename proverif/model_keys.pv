@@ -1,0 +1,240 @@
+(*
+  Known-key security, session key independence:
+
+    phase0: all session keys encrypt secret0
+            all session keys are leaked
+            query attacker(secret0) must be false
+
+    phase1: all session keys encrypt secret1
+            query attacker(secret1) must be true
+
+  Perfect forward secrecy:
+
+    phase2: all session keys encrypt secret2
+            long-term secrets are leaked
+            query attacker(secret2) must be false
+            query attacker(secret1) must be true
+*)
+
+(************************************* Global ****************************************)
+
+type participant.
+type publickey.
+type secretkey.
+type sessionkey.
+type dh_element.
+type dh_exponent.
+
+free c: channel.
+
+table keys(participant, publickey).
+
+free A, B: participant.
+free secret0, secret1, secret2: bitstring [private].
+
+(************************************* Crypto ****************************************)
+
+(* Signatures *)
+fun pk(secretkey): publickey.
+fun sign(bitstring, secretkey): bitstring.
+reduc forall x: bitstring, y: secretkey;
+  vrfy(sign(x,y), pk(y)) = x.
+
+(* Diffie-Hellman *)
+const g: dh_element.
+fun exp(dh_element, dh_exponent): dh_element.
+equation forall x: dh_exponent, y: dh_exponent;
+  exp(exp(g, x), y) = exp(exp(g, y), x).
+
+(* Symmetric encryption *)
+fun senc(bitstring, sessionkey): bitstring.
+reduc forall x: bitstring, y: sessionkey; 
+  sdec(senc(x,y),y) = x.
+
+(* Message authentication code *)
+fun mac(bitstring, sessionkey): bitstring.
+reduc forall x:bitstring, y:sessionkey;
+  macvrfy( mac(x,y), y ) = x.
+
+(* One-way functions *)
+fun kdf(dh_element): sessionkey.
+fun hash(bitstring): bitstring.
+
+(************************************** Events ***************************************)
+
+(* arguments:    initiator    responder  initiator  responder   pkI_eph     pkR_eph 
+                      |            |         |           |         |            | 
+                      v            v         v           v         v            | *)
+event startI (participant, participant, publickey, publickey, dh_element).   (* v *) 
+event startR (participant, participant, publickey, publickey, dh_element, dh_element).
+event endI   (participant, participant, publickey, publickey, dh_element, dh_element).
+event endR   (participant, participant, publickey, publickey, dh_element, dh_element).
+
+(* arguments:            self       self    pkI_eph     pkR_eph 
+                           |          |        |           |
+                           v          v        v           v    *)
+event canCompute  (participant, publickey, dh_element, dh_element).
+event hasComputed (participant, publickey, dh_element, dh_element).
+
+(**************************************** PKI ****************************************)
+
+let keyserver(skS: secretkey) =  
+  in(c,(p: participant)); 
+  get keys(=p, k) in
+  out(c,sign((k,p),skS)).
+
+let keyregistration =
+  in(c, (p: participant, k: publickey));
+  if p <> A && p <> B then insert keys(p,k).
+
+(**************************************** AKA ****************************************)
+
+(* Role of the initiator (aircraft) with identity idI and secret key skI *)
+let processInitiator(
+  pkS: publickey, 
+  skA: secretkey, 
+  skB: secretkey, 
+  secretX: bitstring, (* the secret to be encrypted with K *)
+  leak: bool          (* if true, then leak K *)
+) =
+
+  (* The attacker starts the initiator by choosing identity idI,
+     and its interlocutor idR. *)
+  in(c, (idI: participant, idR: participant));
+
+  (* We check that idI is honest, i.e. is A or B *)
+  if idI = A || idI = B then
+  let skI = if idI = A then skA else skB in
+  let pkI = pk(skI) in
+
+  (* Message 1: Get the public key certificate of idR *)
+  out(c, idR);
+
+  (* Message 2 *)
+  in(c, cert: bitstring);
+  let (pkR: publickey, =idR) = vrfy(cert,pkS) in
+
+  (* Message 3 *)
+  new skI_eph: dh_exponent;
+  let pkI_eph = exp(g, skI_eph) in
+  event startI(idI, idR, pkI, pkR, pkI_eph);
+  let msg1 = (idR, pkI_eph) in
+  let sig1 = sign(msg1, skI) in
+  out(c, (idI, sig1));
+
+  (* Message 6 *)
+  in(c, sig2: bitstring);
+  let (=idI, =pkI_eph, pkR_eph: dh_element) = vrfy(sig2, pkR) in 
+  event canCompute(idI, pkI, pkI_eph, pkR_eph);
+  
+  (* Message 7 *)
+  let K = kdf(exp(pkR_eph, skI_eph)) in
+  event hasComputed(idI, pkI, pkI_eph, pkR_eph);
+  let h = hash((idI, idR, pkI, pkR, pkI_eph, pkR_eph)) in
+  let msg3 = h in
+  let tag3 = mac(msg3, K) in
+  out(c, tag3);
+
+  (* OK *)
+  if idR = B || idR = A then
+  event endI(idI, idR, pkI, pkR, pkI_eph, pkR_eph);
+
+  out(c, senc(secretX, K));
+  if leak = true then out(c, K).
+
+(* Role of the responder (ground) with identity idR and secret key skR *)
+let processResponder(
+  pkS: publickey, 
+  skA: secretkey, 
+  skB: secretkey,
+  secretX: bitstring
+) =
+
+  (* The attacker starts the responder by choosing identity idR. *)
+  in(c, idR: participant);
+
+  (* We check that idR is honest (i.e. is A or B). *)
+  if idR = A || idR = B then
+  let skR = if idR = A then skA else skB in
+  let pkR = pk(skR) in
+
+  (* Message 3 *)
+  in(c, (idI: participant, sig1: bitstring));
+
+  (* Message 4: Get the public key certificate of idI *)
+  out(c, idI);
+
+  (* Message 5 *)
+  in(c, cert: bitstring);
+  let (pkI:publickey, =idI) = vrfy(cert,pkS) in
+  let (=idR, pkI_eph: dh_element) = vrfy(sig1, pkI) in
+
+  (* Message 6 *)
+  new skR_eph: dh_exponent;
+  let pkR_eph = exp(g, skR_eph) in
+  event startR(idI, idR, pkI, pkR, pkI_eph, pkR_eph);
+  event canCompute(idR, pkR, pkI_eph, pkR_eph);
+  let sig2 = sign( (idI, pkI_eph, pkR_eph), skR ) in 
+  out(c, sig2);
+
+  (* Message 7 *)
+  let K = kdf(exp(pkI_eph, skR_eph)) in
+  event hasComputed(idR, pkR, pkI_eph, pkR_eph);
+  in(c, tag3: bitstring);
+  let h_ref = hash((idI, idR, pkI, pkR, pkI_eph, pkR_eph)) in
+  let (=h_ref) = macvrfy(tag3, K) in
+
+  (* OK *)
+  if idI = A || idI = B then
+  event endR(idI, idR, pkI, pkR, pkI_eph, pkR_eph);
+  
+  out(c, senc(secretX, K)).
+
+(************************************* Queries *************************************)
+
+query attacker(secret0); (* Expected: false *)
+      attacker(secret1); (* Expected: true  *)
+      attacker(secret2). (* Expected: false  *)
+
+(*************************************** Main **************************************)
+
+process
+  new skA: secretkey;
+  let pkA = pk(skA) in
+  out(c,pkA);
+  insert keys(A,pkA);
+
+  new skB: secretkey;
+  let pkB = pk(skB) in
+  out(c,pkB);
+  insert keys(B,pkB);
+
+  new skS: secretkey;
+  let pkS = pk(skS) in
+  out(c,pkS);
+
+  (
+    (*phase 0*)
+    (!processInitiator(pkS, skA, skB, secret0, true)) | 
+    (!processResponder(pkS, skA, skB, secret0)) |
+    (!keyserver(skS)) |
+    (!keyregistration)
+  )
+  |
+  (
+    phase 1;
+    (!processInitiator(pkS, skA, skB, secret1, false)) | 
+    (!processResponder(pkS, skA, skB, secret1)) |
+    (!keyserver(skS)) |
+    (!keyregistration)
+  )
+  |
+  (
+    phase 2;
+    out(c, skA);
+    out(c, skB);
+    (!processInitiator(pkS, skA, skB, secret2, false)) | 
+    (!processResponder(pkS, skA, skB, secret2)) |
+    (!keyserver(skS)) |
+    (!keyregistration)
+  )

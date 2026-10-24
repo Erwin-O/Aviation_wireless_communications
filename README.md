@@ -81,10 +81,9 @@ Software/
 ├── protocol/            the specification: encoding, primitives, credentials,
 │                        handshake, session, operational, node, identity,
 │                        mqtt_binding, rejection
-├── encryption/          ascon.py (NIST SP 800-232 reference), crypto.py (legacy)
-├── core/                the earlier prototype's modules
+├── encryption/          ascon.py, the NIST SP 800-232 reference implementation
 ├── scripts/             provision.py, aircraft.py, station.py, replay.py,
-│                        plus the legacy player and listener, and tooling
+│                        and the scenario and database tooling
 ├── tests/               148 tests
 ├── visualisation/       Terminal window launchers, tiling, stop
 ├── config/              trust_anchors.json, aircraft and airport databases
@@ -93,11 +92,12 @@ Software/
 └── run_demo.sh, stop_demo.sh
 ```
 
-The repository holds **two implementations**. `protocol/` with
-`scripts/aircraft.py` and `scripts/station.py` is the conforming one and is
-where work goes. `core/` with `scripts/scenario_player.py` and
-`scripts/demo_subscriber.py` is the earlier prototype, kept so results
-produced with it stay reproducible; `./run_demo.sh --legacy` runs it.
+An earlier prototype implemented a different protocol: session keys wrapped
+to a static public key, a directory of known principals, and no verification
+of operational messages on receipt. It was removed when this implementation
+replaced it, and remains in the git history at the tag
+`legacy-implementation` for anyone reproducing the results reported in the
+companion paper.
 
 ---
 
