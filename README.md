@@ -1,8 +1,10 @@
 # Secure Aviation Messaging Prototype
 
+[![DOI](https://zenodo.org/badge/732568873.svg)](https://doi.org/10.5281/zenodo.24269463)
+
 A research prototype of a secure, transport-independent air–ground
 communication protocol, implementing the specification in Section 3.3 of the
-accompanying IJCIP paper.
+accompanying paper.
 
 Modern aviation runs on a diverse set of digital links — VDL2, ACARS, Mode-S,
 CPDLC — whose security guarantees, where they exist, are bound to the
