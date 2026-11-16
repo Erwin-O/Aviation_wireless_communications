@@ -8,7 +8,7 @@ A file-by-file map of the repository. For *how* the protocol works see
 
 ## Architecture at a Glance
 
-The implementation follows Section 3.3 of the IJCIP paper: a three-message
+The implementation follows Section 3.3 of the accompanying paper: a three-message
 authenticated key agreement, credentials rather than a directory of known
 public keys, a challenge exchange binding every command to the message it
 answers, and a three-state session model for transfer of control.

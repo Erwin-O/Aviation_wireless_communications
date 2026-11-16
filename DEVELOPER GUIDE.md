@@ -9,7 +9,7 @@ running it.
 ## 1. Introduction
 
 This repository implements the air–ground communication protocol specified in
-Section 3.3 of the IJCIP paper. The implementation exists to establish that
+Section 3.3 of the accompanying paper. The implementation exists to establish that
 the specification can be realised as written, and that each check it requires
 rejects the input it is meant to reject.
 

@@ -8,7 +8,7 @@
 > `../NOTICE`.
 
 The formal models behind the security analysis, in the symbolic (Dolev–Yao)
-model. They are the models printed in the last three appendices of the IJCIP
+model. They are the models printed in the last three appendices of the accompanying
 paper, reproduced here verbatim so the repository carries what the paper
 prints.
 
