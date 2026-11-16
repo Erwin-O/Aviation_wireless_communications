@@ -46,7 +46,8 @@ Ascon-Mac, Ascon-Hash256, Ascon-CXOF128. 128-bit security throughout.
 cd Software
 python3 -m venv venv && source venv/bin/activate
 pip install -e .
-pip install paho-mqtt cryptography
+
+python -m unittest discover -s tests -t . -q   # 167 tests, all offline
 
 docker compose up -d                       # mosquitto on 127.0.0.1:1883
 

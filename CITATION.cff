@@ -18,17 +18,17 @@ type: software
 version: 0.1.0
 date-released: '2026-10-24'
 license: Apache-2.0
-# Fill in once the repository is public:
-# repository-code: 'https://github.com/<account>/<repository>'
+repository-code: 'https://github.com/Erwin-O/Aviation_wireless_communications'
 # Fill in once a release has been archived and a DOI minted:
 # doi: 10.5281/zenodo.XXXXXXX
 keywords:
   - air-ground communication
-  - air traffic management
+  - message-centric security
+  - aviation datalink
   - authenticated key exchange
   - lightweight cryptography
   - Ascon
-  - critical infrastructure protection
+  - formal verification
   - unmanned aerial systems
 # This software was written by Erwin Orye alone. The paper it implements has
 # four authors; they are listed under preferred-citation below.
@@ -39,18 +39,20 @@ authors:
   - family-names: Orye
     given-names: Erwin
     email: erwin@orye.eu
+    orcid: 'https://orcid.org/0000-0002-0390-2494'
 preferred-citation:
   type: article
   title: >-
     A Secure, Message-Centric Air-Ground Communication Protocol for
     Heterogeneous Aviation Environments
-  journal: International Journal of Critical Infrastructure Protection
+  journal: Journal of Network and Computer Applications
   year: 2026
   # Fill in on acceptance: volume, start, end, doi
   authors:
     - family-names: Orye
       given-names: Erwin
       email: erwin@orye.eu
+      orcid: 'https://orcid.org/0000-0002-0390-2494'
       affiliation: >-
         Centre for Digital Forensics and Cyber Security, Tallinn University
         of Technology, Tallinn, Estonia
@@ -60,6 +62,7 @@ preferred-citation:
         Department of Mathematics, Royal Military Academy, Brussels, Belgium
     - family-names: Maennel
       given-names: Olaf
+      orcid: 'https://orcid.org/0000-0002-9621-0787'
       affiliation: >-
         School of Computer and Mathematical Sciences, The University of
         Adelaide, Adelaide, Australia

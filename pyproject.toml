@@ -5,7 +5,28 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aviation-messaging"
 version = "0.1.0"
+description = "Reference implementation of a message-centric air-ground communication protocol"
+readme = "README.md"
 requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Erwin Orye" }]
+
+# Needed to run the protocol and its tests.
+#   cryptography  Ed25519 signatures and X25519 key agreement (protocol/primitives.py)
+#   paho-mqtt     the MQTT bearer used by the demo (mqtt_client.py, scripts/)
+# Ascon is vendored in encryption/ascon.py and needs nothing installed.
+dependencies = [
+    "cryptography>=42",
+    "paho-mqtt>=2.0",
+]
+
+[project.optional-dependencies]
+# Only scripts/visualise_flight.py needs these; the protocol and the tests
+# do not, so a reviewer verifying the paper can skip them.
+viz = [
+    "folium",
+    "matplotlib",
+]
 
 [tool.setuptools]
 # Root-level modules that scripts import directly (not part of any sub-package)
@@ -14,5 +35,6 @@ py-modules = ["mqtt_client", "settings"]
 [tool.setuptools.packages.find]
 where = ["."]
 exclude = ["tests*", "venv*"]
-# finds core/, encryption/, config/, utils/, protocol/ (all have __init__.py)
-# scripts/, visualisation/, logs/ etc. have no __init__.py and are skipped automatically
+# finds config/, encryption/, protocol/ (all have __init__.py)
+# scripts/, visualisation/, logs/ etc. have no __init__.py and are skipped
+# automatically
