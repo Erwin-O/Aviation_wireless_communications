@@ -16,7 +16,7 @@ abstract: >-
   Ed25519, X25519 and the Ascon family of lightweight primitives.
 type: software
 version: 0.1.0
-date-released: '2026-10-24'
+date-released: '2026-11-16'
 license: Apache-2.0
 repository-code: 'https://github.com/Erwin-O/Aviation_wireless_communications'
 # Fill in once a release has been archived and a DOI minted:
