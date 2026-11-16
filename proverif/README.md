@@ -1,22 +1,21 @@
 # ProVerif models
 
 > **Authorship.** The three models in this directory are the work of
-> Frederic Lafitte. They are included here with his permission, so that a
-> reader can run what the paper prints in its appendices. They are formal
-> models, not part of the implementation, and nothing in the implementation
-> depends on them. The rest of this repository is Erwin Orye's work. See
-> `../NOTICE`.
+> Frederic Lafitte. They are included here with his permission. They are
+> formal models, not part of the implementation, and nothing in the
+> implementation depends on them. The rest of this repository is Erwin Orye's
+> work. See `../NOTICE`.
 
-The formal models behind the security analysis, in the symbolic (Dolev–Yao)
-model. They are the models printed in the last three appendices of the accompanying
-paper, reproduced here verbatim so the repository carries what the paper
-prints.
+Formal models of the protocol's security goals in the symbolic (Dolev–Yao)
+model, where the network is entirely under adversarial control and the
+cryptography is treated as perfect. A result here is therefore a statement
+about the protocol's logic, not about the strength of its primitives.
 
-| File | Establishes | Paper |
-|---|---|---|
-| `model_aka.pv` | G1 aircraft authentication, G2 ground-station authentication, G6 KCI resistance, G7 explicit key confirmation | the AKA model appendix |
-| `model_keys.pv` | G3 session-key secrecy, G4 session-key independence, G5 perfect forward secrecy | the key-secrecy model appendix |
-| `model_cmd.pv` | G10 replay resistance, G11 in-order command execution | the command model appendix |
+| File | Establishes |
+|---|---|
+| `model_aka.pv` | G1 aircraft authentication, G2 ground-station authentication, G6 KCI resistance, G7 explicit key confirmation |
+| `model_keys.pv` | G3 session-key secrecy, G4 session-key independence, G5 perfect forward secrecy |
+| `model_cmd.pv` | G10 replay resistance, G11 in-order command execution |
 
 ## Running them
 
@@ -28,8 +27,7 @@ proverif model_cmd.pv
 
 ProVerif is available from <https://bblanche.gitlabpages.inria.fr/proverif/>.
 The expected outcome of each query is stated in the comments at the head of
-each file. Section 4.2 of the paper reports the results and says what each
-model abstracts.
+each file.
 
 ## What they are and are not
 
@@ -46,15 +44,14 @@ automatically transfer to another:
   keys as given, so its results on replay and ordering hold for a bounded
   scenario rather than for unboundedly many.
 
-In `model_cmd.pv` the participants named `G1` and `G2` are ground stations
-and are unrelated to the goal labels `G1` and `G2` used in the paper.
+In `model_cmd.pv` the participants named `G1` and `G2` are ground stations.
+They are unrelated to the goal labels `G1` and `G2` above.
 
-Four of the thirteen goals are established by argument rather than in
-ProVerif: G8 unknown key-share resistance, G9 resilience to weak randomness,
-G12 authorisation, which includes the airspace a ground station claims, and
-G13 exclusive ground-station control. Section 4.1 of
-the paper gives those arguments and says why each lies outside what a
-symbolic model represents.
+Four of the thirteen goals are not established here, because they lie outside
+what a symbolic model represents: G8 unknown key-share resistance, G9
+resilience to weak randomness, G12 authorisation, which includes the airspace
+a ground station claims, and G13 exclusive ground-station control. They are
+discharged by argument instead, in the paper cited in `../CITATION.cff`.
 
 ## History
 
