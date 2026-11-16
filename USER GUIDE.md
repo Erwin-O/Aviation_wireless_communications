@@ -12,7 +12,7 @@ stations, each in its own Terminal window, over an MQTT broker that is
 treated as untrusted. Every message is authenticated; every message that
 fails a check is discarded with the name of the check that refused it.
 
-What you are watching is the protocol of Section 3.3 of the accompanying paper: a
+What you are watching is the protocol this repository implements: a
 three-message handshake, credentials carried in the messages themselves, a
 challenge exchange binding each command to the report it answers, and a
 transfer of control that needs no channel between ground stations.
